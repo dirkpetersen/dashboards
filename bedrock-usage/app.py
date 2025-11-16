@@ -448,14 +448,6 @@ VPN_ERROR_TEMPLATE = """
                 <span class="label">Your IP Address:</span>
                 <code>{{ client_ip }}</code>
             </div>
-            <div class="info-row">
-                <span class="label">Allowed Networks:</span>
-                <div class="subnets-list">
-                    {% for subnet in allowed_subnets.split(', ') %}
-                    <code>{{ subnet }}</code>
-                    {% endfor %}
-                </div>
-            </div>
         </div>
     </div>
 </body>
