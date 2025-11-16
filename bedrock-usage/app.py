@@ -434,6 +434,7 @@ VPN_ERROR_TEMPLATE = """
             <h2>🔌 Connect to VPN</h2>
             <ol>
                 <li><strong>Connect to your organization's VPN</strong></li>
+                <li><strong>Use Full Tunnel mode</strong> (not Split Tunnel) if your VPN offers both options</li>
                 <li><strong>Refresh this page</strong> (Ctrl+R or Cmd+R)</li>
                 <li>If the issue persists, contact your system administrator</li>
             </ol>
