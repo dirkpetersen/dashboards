@@ -474,7 +474,20 @@ def check_subnet_access():
         return True
 
     try:
-        client_ip = request.remote_addr
+        # Get client IP - Lambda/API Gateway uses X-Forwarded-For header
+        client_ip = request.headers.get('X-Forwarded-For', request.remote_addr)
+        if client_ip and ',' in client_ip:
+            # X-Forwarded-For can be "client, proxy1, proxy2" - take first IP
+            client_ip = client_ip.split(',')[0].strip()
+
+        if not client_ip:
+            print("WARNING: Unable to determine client IP, denying access")
+            return render_template_string(
+                VPN_ERROR_TEMPLATE,
+                client_ip='unknown',
+                allowed_subnets='Unable to determine your IP'
+            ), 403
+
         client_ip_obj = ipaddress.ip_address(client_ip)
 
         # Parse comma-separated list of subnets and always include localhost
