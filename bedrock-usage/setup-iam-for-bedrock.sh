@@ -3,6 +3,7 @@
 # IAM setup script for AWS Bedrock logging
 # This script requires IAM permissions to create roles and policies
 # Usage: AWS_PROFILE=usermanager ./setup-iam-for-bedrock.sh
+#    or: ./setup-iam-for-bedrock.sh --profile usermanager
 
 set -e  # Exit on error
 
@@ -10,6 +11,41 @@ echo "=========================================="
 echo "AWS Bedrock IAM Setup Script"
 echo "=========================================="
 echo ""
+
+# Parse command-line arguments for --profile flag
+PROFILE_ARG=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --profile)
+            PROFILE_ARG="$2"
+            shift 2
+            ;;
+        *)
+            echo "ERROR: Unknown argument: $1"
+            echo "Usage: $0 [--profile PROFILE_NAME]"
+            exit 1
+            ;;
+    esac
+done
+
+# Check if AWS_PROFILE is set, or use --profile argument if provided
+if [ -z "$AWS_PROFILE" ] && [ -z "$PROFILE_ARG" ]; then
+    echo "ERROR: AWS_PROFILE environment variable must be set, or use --profile argument"
+    echo ""
+    echo "Usage:"
+    echo "  AWS_PROFILE=your-profile $0"
+    echo "  $0 --profile your-profile"
+    echo ""
+    echo "Example:"
+    echo "  AWS_PROFILE=usermanager ./setup-iam-for-bedrock.sh"
+    echo "  ./setup-iam-for-bedrock.sh --profile usermanager"
+    exit 1
+fi
+
+# Use provided profile argument if given, otherwise use AWS_PROFILE
+if [ -n "$PROFILE_ARG" ]; then
+    export AWS_PROFILE="$PROFILE_ARG"
+fi
 
 # Check if AWS CLI is installed
 if ! command -v aws &> /dev/null; then

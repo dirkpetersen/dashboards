@@ -2,7 +2,7 @@
 
 # Deploy Flask application as AWS Lambda function with API Gateway
 # Supports all dashboards with their own settings
-# Usage: AWS_PROFILE=deploy-admin ./setup-lambda.sh bedrock-usage
+# Usage: AWS_PROFILE=deploy-admin ./setup-lambda.sh bedrock-usage [--no-dns]
 
 set -e
 
@@ -13,14 +13,41 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Check arguments
-if [ $# -ne 1 ]; then
-    echo "Usage: $0 <dashboard-name>"
-    echo "Example: AWS_PROFILE=deploy-admin ./setup-lambda.sh bedrock-usage"
+# Parse arguments
+NO_DNS=false
+DASHBOARD_NAME=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --no-dns)
+            NO_DNS=true
+            shift
+            ;;
+        *)
+            if [ -z "$DASHBOARD_NAME" ]; then
+                DASHBOARD_NAME="$1"
+            else
+                echo "Error: Unknown argument: $1"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Check if dashboard name was provided
+if [ -z "$DASHBOARD_NAME" ]; then
+    echo "Usage: $0 <dashboard-name> [--no-dns]"
+    echo ""
+    echo "Options:"
+    echo "  --no-dns    Deploy without Route 53 DNS (use API Gateway endpoint only)"
+    echo ""
+    echo "Examples:"
+    echo "  AWS_PROFILE=deploy-admin ./setup-lambda.sh bedrock-usage"
+    echo "  AWS_PROFILE=deploy-admin ./setup-lambda.sh bedrock-usage --no-dns"
     exit 1
 fi
 
-DASHBOARD_NAME="$1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DASHBOARD_DIR="$SCRIPT_DIR/$DASHBOARD_NAME"
 
@@ -37,6 +64,9 @@ fi
 
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
 echo -e "${BLUE}AWS Lambda Deployment for $DASHBOARD_NAME${NC}"
+if [ "$NO_DNS" = true ]; then
+    echo -e "${BLUE}(No Route 53 DNS - API Gateway endpoint only)${NC}"
+fi
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
 echo ""
 
@@ -93,7 +123,10 @@ echo ""
 echo -e "${BLUE}Global Settings (apply to all dashboards):${NC}"
 prompt_input "AWS Profile" "default" "AWS_PROFILE"
 prompt_input "Subnet restriction (CIDR, leave empty for no restriction)" "" "SUBNET_ONLY"
-prompt_input "FQDN (fully qualified domain name)" "" "FQDN"
+
+if [ "$NO_DNS" = false ]; then
+    prompt_input "FQDN (fully qualified domain name)" "" "FQDN"
+fi
 echo ""
 
 APP_AWS_VAR=$(get_app_var "AWS_PROFILE")
@@ -104,7 +137,10 @@ echo -e "${BLUE}Dashboard-Specific Settings (override global):${NC}"
 echo "(Leave blank to use global settings)"
 prompt_input "AWS Profile (app-specific)" "" "APP_AWS_PROFILE"
 prompt_input "Subnet restriction (app-specific)" "" "APP_SUBNET_ONLY"
-prompt_input "FQDN (app-specific)" "" "APP_FQDN"
+
+if [ "$NO_DNS" = false ]; then
+    prompt_input "FQDN (app-specific)" "" "APP_FQDN"
+fi
 echo ""
 
 # Use global or app-specific values
@@ -112,47 +148,54 @@ FINAL_AWS_PROFILE="${APP_AWS_PROFILE:-$AWS_PROFILE}"
 FINAL_SUBNET_ONLY="${APP_SUBNET_ONLY:-$SUBNET_ONLY}"
 FINAL_FQDN="${APP_FQDN:-$FQDN}"
 
-if [ -z "$FINAL_FQDN" ]; then
-    echo -e "${RED}❌ Error: FQDN is required${NC}"
+if [ "$NO_DNS" = false ] && [ -z "$FINAL_FQDN" ]; then
+    echo -e "${RED}❌ Error: FQDN is required (use --no-dns to skip DNS setup)${NC}"
     exit 1
 fi
 
 echo -e "${GREEN}✓ AWS Profile: $FINAL_AWS_PROFILE${NC}"
 echo -e "${GREEN}✓ Subnet Only: ${FINAL_SUBNET_ONLY:-none}${NC}"
-echo -e "${GREEN}✓ FQDN: $FINAL_FQDN${NC}"
+if [ "$NO_DNS" = false ]; then
+    echo -e "${GREEN}✓ FQDN: $FINAL_FQDN${NC}"
+fi
 echo ""
 
 # Extract domain from FQDN (last two parts for Route 53 hosted zone)
-# Example: app.example.com -> example.com
-IFS='.' read -ra FQDN_PARTS <<< "$FINAL_FQDN"
-DOMAIN_LENGTH=${#FQDN_PARTS[@]}
+# Only if DNS is enabled
+if [ "$NO_DNS" = false ]; then
+    # Example: app.example.com -> example.com
+    IFS='.' read -ra FQDN_PARTS <<< "$FINAL_FQDN"
+    DOMAIN_LENGTH=${#FQDN_PARTS[@]}
 
-if [ $DOMAIN_LENGTH -lt 2 ]; then
-    echo -e "${RED}❌ Error: Invalid FQDN format: $FINAL_FQDN${NC}"
-    exit 1
+    if [ $DOMAIN_LENGTH -lt 2 ]; then
+        echo -e "${RED}❌ Error: Invalid FQDN format: $FINAL_FQDN${NC}"
+        exit 1
+    fi
+
+    # Get the last two parts (domain + TLD)
+    HOSTED_ZONE="${FQDN_PARTS[$((DOMAIN_LENGTH-2))]} . ${FQDN_PARTS[$((DOMAIN_LENGTH-1))]}"
+    HOSTED_ZONE="${HOSTED_ZONE// /}"
 fi
-
-# Get the last two parts (domain + TLD)
-HOSTED_ZONE="${FQDN_PARTS[$((DOMAIN_LENGTH-2))]} . ${FQDN_PARTS[$((DOMAIN_LENGTH-1))]}"
-HOSTED_ZONE="${HOSTED_ZONE// /}"
 
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
 echo -e "${BLUE}LAMBDA DEPLOYMENT${NC}"
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
 echo ""
 
-# Step 1: Check if Route 53 hosted zone exists
-echo -e "${BLUE}Step 1: Checking Route 53 hosted zone...${NC}"
-ZONE_ID=$(aws route53 list-hosted-zones-by-name --query "HostedZones[?Name=='${HOSTED_ZONE}.'].Id" --output text 2>/dev/null | cut -d'/' -f3)
+# Step 1: Check if Route 53 hosted zone exists (skip if --no-dns)
+if [ "$NO_DNS" = false ]; then
+    echo -e "${BLUE}Step 1: Checking Route 53 hosted zone...${NC}"
+    ZONE_ID=$(aws route53 list-hosted-zones-by-name --query "HostedZones[?Name=='${HOSTED_ZONE}.'].Id" --output text 2>/dev/null | cut -d'/' -f3)
 
-if [ -z "$ZONE_ID" ]; then
-    echo -e "${RED}❌ Error: Route 53 hosted zone not found for: $HOSTED_ZONE${NC}"
-    echo "Please create a hosted zone in Route 53 first"
-    exit 1
+    if [ -z "$ZONE_ID" ]; then
+        echo -e "${RED}❌ Error: Route 53 hosted zone not found for: $HOSTED_ZONE${NC}"
+        echo "Please create a hosted zone in Route 53 first"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ Found hosted zone: $HOSTED_ZONE (ID: $ZONE_ID)${NC}"
+    echo ""
 fi
-
-echo -e "${GREEN}✓ Found hosted zone: $HOSTED_ZONE (ID: $ZONE_ID)${NC}"
-echo ""
 
 # Step 2: Create deployment package
 echo -e "${BLUE}Step 2: Creating deployment package...${NC}"
@@ -163,15 +206,20 @@ mkdir -p "$BUILD_DIR"
 
 # Copy application files
 cp "$DASHBOARD_DIR/app.py" "$BUILD_DIR/"
-cp "$DASHBOARD_DIR"/*template*.html "$BUILD_DIR/" 2>/dev/null || true
+cp "$DASHBOARD_DIR"/*.html "$BUILD_DIR/" 2>/dev/null || true
 
 # Create requirements file in build dir
 cp "$SCRIPT_DIR/requirements.txt" "$BUILD_DIR/"
 
+# Create a minimal .env file for Lambda (will be loaded by app.py)
+cat > "$BUILD_DIR/.env" << ENVEOF
+# Lambda deployment - environment variables set by lambda_handler.py
+ENVEOF
+
 # Create config file with deployment settings
+# Note: AWS_PROFILE is NOT used in Lambda - Lambda uses IAM roles instead
 cat > "$BUILD_DIR/config.json" << EOF
 {
-  "aws_profile": "$FINAL_AWS_PROFILE",
   "subnet_only": "$FINAL_SUBNET_ONLY",
   "fqdn": "$FINAL_FQDN"
 }
@@ -189,10 +237,11 @@ config_file = Path(__file__).parent / 'config.json'
 config = json.load(open(config_file))
 
 # Set environment variables
-os.environ['AWS_PROFILE'] = config.get('aws_profile', 'default')
+# Note: Lambda uses IAM role for AWS credentials, NOT AWS_PROFILE
 if config.get('subnet_only'):
     os.environ['SUBNET_ONLY'] = config['subnet_only']
-os.environ['FQDN'] = config.get('fqdn', '')
+if config.get('fqdn'):
+    os.environ['FQDN'] = config['fqdn']
 
 # Import app
 from app import app
@@ -271,10 +320,11 @@ pip_output=$(.venv/bin/pip install -q -r "$BUILD_DIR/requirements.txt" -t "$BUIL
 
 # Create zip file
 cd "$BUILD_DIR"
-zip -r -q "${LAMBDA_FUNCTION_NAME}.zip" . -x "*.git*" "*.venv*" "*__pycache__*"
+zip -r -q "${LAMBDA_FUNCTION_NAME}.zip" . -x "*.git*" "*.venv*" "*__pycache__*" "*.pyc"
 cd - > /dev/null
 
-LAMBDA_ROLE="arn:aws:iam::${ACCOUNT_ID}:role/lambda-bedrock-role"
+LAMBDA_ROLE_NAME="lambda-${DASHBOARD_NAME}-role"
+LAMBDA_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${LAMBDA_ROLE_NAME}"
 
 # Check if function exists
 if aws lambda get-function --function-name "$LAMBDA_FUNCTION_NAME" 2>/dev/null; then
@@ -286,7 +336,7 @@ else
     echo -e "${YELLOW}Creating new Lambda function...${NC}"
 
     # Check if role exists, if not create it
-    if ! aws iam get-role --role-name lambda-bedrock-role 2>/dev/null; then
+    if ! aws iam get-role --role-name "$LAMBDA_ROLE_NAME" 2>/dev/null; then
         echo -e "${YELLOW}Creating IAM role for Lambda...${NC}"
 
         TRUST_POLICY='{
@@ -303,25 +353,59 @@ else
         }'
 
         aws iam create-role \
-            --role-name lambda-bedrock-role \
+            --role-name "$LAMBDA_ROLE_NAME" \
             --assume-role-policy-document "$TRUST_POLICY" > /dev/null
 
         # Attach policy for CloudWatch logs
         aws iam attach-role-policy \
-            --role-name lambda-bedrock-role \
+            --role-name "$LAMBDA_ROLE_NAME" \
             --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole > /dev/null
 
-        echo -e "${GREEN}✓ Created IAM role${NC}"
+        # Create and attach policy for Bedrock logs access
+        BEDROCK_POLICY_NAME="lambda-bedrock-logs-access"
+        BEDROCK_POLICY_DOCUMENT='{
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "logs:*"
+              ],
+              "Resource": "arn:aws:logs:*:*:log-group:/aws/bedrock/modelinvocations*"
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "bedrock:GetModelInvocationLoggingConfiguration"
+              ],
+              "Resource": "*"
+            }
+          ]
+        }'
+
+        aws iam put-role-policy \
+            --role-name "$LAMBDA_ROLE_NAME" \
+            --policy-name "$BEDROCK_POLICY_NAME" \
+            --policy-document "$BEDROCK_POLICY_DOCUMENT" > /dev/null
+
+        echo -e "${GREEN}✓ Created IAM role: $LAMBDA_ROLE_NAME${NC}"
+
+        # Wait for IAM role to propagate
+        echo -e "${YELLOW}Waiting for IAM role to propagate (10 seconds)...${NC}"
+        sleep 10
     fi
 
     aws lambda create-function \
         --function-name "$LAMBDA_FUNCTION_NAME" \
         --runtime python3.11 \
-        --role "$LAMBDA_ROLE" \
+        --role "$LAMBDA_ROLE_ARN" \
         --handler lambda_handler.lambda_handler \
         --timeout 30 \
         --memory-size 512 \
         --zip-file "fileb://${BUILD_DIR}/${LAMBDA_FUNCTION_NAME}.zip" > /dev/null
+
+    # Wait for function to be created
+    sleep 2
 fi
 
 echo -e "${GREEN}✓ Lambda function ready: $LAMBDA_FUNCTION_NAME${NC}"
@@ -348,56 +432,68 @@ else
     echo -e "${YELLOW}API Gateway already exists: $API_ID${NC}"
 fi
 
-echo -e "${GREEN}✓ API Gateway: $API_ID${NC}"
-echo ""
-
-# Step 5: Create DNS record
-echo -e "${BLUE}Step 5: Creating Route 53 DNS record...${NC}"
-
 API_ENDPOINT="${API_ID}.execute-api.${REGION}.amazonaws.com"
 
-# Check if record exists
-EXISTING_RECORD=$(aws route53 list-resource-record-sets \
-    --hosted-zone-id "$ZONE_ID" \
-    --query "ResourceRecordSets[?Name=='${FINAL_FQDN}.'].ResourceRecords[0].Value" \
-    --output text 2>/dev/null || echo "")
+# Grant API Gateway permission to invoke Lambda
+echo -e "${YELLOW}Granting API Gateway invoke permission to Lambda...${NC}"
+aws lambda add-permission \
+    --function-name "$LAMBDA_FUNCTION_NAME" \
+    --statement-id AllowAPIGatewayInvoke \
+    --action lambda:InvokeFunction \
+    --principal apigateway.amazonaws.com \
+    --source-arn "arn:aws:execute-api:${REGION}:${ACCOUNT_ID}:${API_ID}/*/*" 2>/dev/null || echo "Permission already exists"
 
-if [ "$EXISTING_RECORD" != "None" ] && [ -n "$EXISTING_RECORD" ]; then
-    echo -e "${YELLOW}Updating existing DNS record...${NC}"
-
-    CHANGE_BATCH="{
-      \"Changes\": [{
-        \"Action\": \"UPSERT\",
-        \"ResourceRecordSet\": {
-          \"Name\": \"${FINAL_FQDN}\",
-          \"Type\": \"CNAME\",
-          \"TTL\": 300,
-          \"ResourceRecords\": [{\"Value\": \"${API_ENDPOINT}\"}]
-        }
-      }]
-    }"
-else
-    CHANGE_BATCH="{
-      \"Changes\": [{
-        \"Action\": \"CREATE\",
-        \"ResourceRecordSet\": {
-          \"Name\": \"${FINAL_FQDN}\",
-          \"Type\": \"CNAME\",
-          \"TTL\": 300,
-          \"ResourceRecords\": [{\"Value\": \"${API_ENDPOINT}\"}]
-        }
-      }]
-    }"
-fi
-
-CHANGE_INFO=$(aws route53 change-resource-record-sets \
-    --hosted-zone-id "$ZONE_ID" \
-    --change-batch "$CHANGE_BATCH" \
-    --query 'ChangeInfo.Id' \
-    --output text)
-
-echo -e "${GREEN}✓ DNS record created: $FINAL_FQDN -> $API_ENDPOINT${NC}"
+echo -e "${GREEN}✓ API Gateway: $API_ID${NC}"
+echo -e "${GREEN}✓ API Endpoint: https://${API_ENDPOINT}${NC}"
 echo ""
+
+# Step 5: Create DNS record (skip if --no-dns)
+if [ "$NO_DNS" = false ]; then
+    echo -e "${BLUE}Step 5: Creating Route 53 DNS record...${NC}"
+
+    # Check if record exists
+    EXISTING_RECORD=$(aws route53 list-resource-record-sets \
+        --hosted-zone-id "$ZONE_ID" \
+        --query "ResourceRecordSets[?Name=='${FINAL_FQDN}.'].ResourceRecords[0].Value" \
+        --output text 2>/dev/null || echo "")
+
+    if [ "$EXISTING_RECORD" != "None" ] && [ -n "$EXISTING_RECORD" ]; then
+        echo -e "${YELLOW}Updating existing DNS record...${NC}"
+
+        CHANGE_BATCH="{
+          \"Changes\": [{
+            \"Action\": \"UPSERT\",
+            \"ResourceRecordSet\": {
+              \"Name\": \"${FINAL_FQDN}\",
+              \"Type\": \"CNAME\",
+              \"TTL\": 300,
+              \"ResourceRecords\": [{\"Value\": \"${API_ENDPOINT}\"}]
+            }
+          }]
+        }"
+    else
+        CHANGE_BATCH="{
+          \"Changes\": [{
+            \"Action\": \"CREATE\",
+            \"ResourceRecordSet\": {
+              \"Name\": \"${FINAL_FQDN}\",
+              \"Type\": \"CNAME\",
+              \"TTL\": 300,
+              \"ResourceRecords\": [{\"Value\": \"${API_ENDPOINT}\"}]
+            }
+          }]
+        }"
+    fi
+
+    CHANGE_INFO=$(aws route53 change-resource-record-sets \
+        --hosted-zone-id "$ZONE_ID" \
+        --change-batch "$CHANGE_BATCH" \
+        --query 'ChangeInfo.Id' \
+        --output text)
+
+    echo -e "${GREEN}✓ DNS record created: $FINAL_FQDN -> $API_ENDPOINT${NC}"
+    echo ""
+fi
 
 # Cleanup
 rm -rf "$BUILD_DIR"
@@ -410,9 +506,17 @@ echo -e "${GREEN}Deployment Details:${NC}"
 echo "  Application: $DASHBOARD_NAME"
 echo "  Lambda Function: $LAMBDA_FUNCTION_NAME"
 echo "  API Gateway: $API_ID"
-echo "  API Endpoint: https://${API_ENDPOINT}"
-echo "  Custom Domain: https://${FINAL_FQDN}"
-echo "  Region: $REGION"
-echo ""
-echo -e "${YELLOW}Note: DNS propagation may take a few minutes${NC}"
+if [ "$NO_DNS" = false ]; then
+    echo "  API Endpoint: https://${API_ENDPOINT}"
+    echo "  Custom Domain: https://${FINAL_FQDN}"
+    echo "  Region: $REGION"
+    echo ""
+    echo -e "${YELLOW}Note: DNS propagation may take a few minutes${NC}"
+else
+    echo "  Public Endpoint: https://${API_ENDPOINT}"
+    echo "  Region: $REGION"
+    echo ""
+    echo -e "${YELLOW}Your dashboard is now publicly accessible at:${NC}"
+    echo -e "${BLUE}https://${API_ENDPOINT}${NC}"
+fi
 echo ""
