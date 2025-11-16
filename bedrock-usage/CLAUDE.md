@@ -257,8 +257,8 @@ The IAM user/role running this needs:
 
 4. **Configure settings** (optional):
    - Copy `.env.default` to `.env` and edit for your setup
-   - Set global variables: `AWS_PROFILE`, `SUBNET_ONLY`, `FQDN`
-   - Or set dashboard-specific overrides: `AWS_PROFILE_BEDROCK_USAGE`, `SUBNET_ONLY_BEDROCK_USAGE`, `FQDN_BEDROCK_USAGE`
+   - Set global variables: `AWS_PROFILE`, `SUBNETS_ONLY`, `FQDN`
+   - Or set dashboard-specific overrides: `AWS_PROFILE_BEDROCK_USAGE`, `SUBNETS_ONLY_BEDROCK_USAGE`, `FQDN_BEDROCK_USAGE`
 
 5. **Run the application**:
    ```bash
@@ -401,14 +401,14 @@ The application supports both global and dashboard-specific configuration:
 **Global configuration** (applies to all dashboards):
 ```bash
 AWS_PROFILE=bedrock
-SUBNET_ONLY=192.168.0.0/16
+SUBNETS_ONLY=192.168.0.0/16,10.0.0.0/8
 FQDN=bedrock-usage.example.com
 ```
 
 **Dashboard-specific overrides** (only for bedrock-usage dashboard):
 ```bash
 AWS_PROFILE_BEDROCK_USAGE=bedrock
-SUBNET_ONLY_BEDROCK_USAGE=192.168.0.0/16
+SUBNETS_ONLY_BEDROCK_USAGE=192.168.0.0/16,10.0.0.0/8
 FQDN_BEDROCK_USAGE=bedrock-usage.example.com
 ```
 

@@ -107,14 +107,15 @@ Configuration uses environment variables with a **hierarchy**:
 
 **Supported variables:**
 - `AWS_PROFILE`: AWS credentials profile to use
-- `SUBNET_ONLY`: Restrict dashboard access to specific CIDR (e.g., `192.168.0.0/16`)
+- `SUBNETS_ONLY`: Restrict dashboard access to specific CIDRs (comma-separated, e.g., `192.168.0.0/16,10.0.0.0/8`)
+  - Note: `127.0.0.1/8` (localhost) is always implicitly allowed
 - `FQDN`: Fully qualified domain name for Lambda deployments
 
 **Example .env**:
 ```bash
 # Global defaults
 AWS_PROFILE=bedrock
-SUBNET_ONLY=192.168.0.0/16
+SUBNETS_ONLY=192.168.0.0/16,10.0.0.0/8
 
 # Override for bedrock-usage dashboard only
 AWS_PROFILE_BEDROCK_USAGE=bedrock-prod
@@ -194,7 +195,7 @@ Each dashboard's `app.py` documents specific API calls and required permissions.
 
 ### Global (applied to all dashboards)
 - `AWS_PROFILE`: AWS CLI profile name
-- `SUBNET_ONLY`: CIDR block for access control
+- `SUBNETS_ONLY`: Comma-separated CIDR blocks for access control (localhost always allowed)
 - `FQDN`: Domain name for Lambda deployments
 
 ### Dashboard-Specific Override Pattern

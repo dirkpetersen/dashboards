@@ -122,7 +122,7 @@ echo ""
 
 echo -e "${BLUE}Global Settings (apply to all dashboards):${NC}"
 prompt_input "AWS Profile" "default" "AWS_PROFILE"
-prompt_input "Subnet restriction (CIDR, leave empty for no restriction)" "" "SUBNET_ONLY"
+prompt_input "Subnets restriction (comma-separated CIDRs, leave empty for no restriction)" "" "SUBNETS_ONLY"
 
 if [ "$NO_DNS" = false ]; then
     prompt_input "FQDN (fully qualified domain name)" "" "FQDN"
@@ -130,13 +130,13 @@ fi
 echo ""
 
 APP_AWS_VAR=$(get_app_var "AWS_PROFILE")
-APP_SUBNET_VAR=$(get_app_var "SUBNET_ONLY")
+APP_SUBNET_VAR=$(get_app_var "SUBNETS_ONLY")
 APP_FQDN_VAR=$(get_app_var "FQDN")
 
 echo -e "${BLUE}Dashboard-Specific Settings (override global):${NC}"
 echo "(Leave blank to use global settings)"
 prompt_input "AWS Profile (app-specific)" "" "APP_AWS_PROFILE"
-prompt_input "Subnet restriction (app-specific)" "" "APP_SUBNET_ONLY"
+prompt_input "Subnets restriction (app-specific)" "" "APP_SUBNETS_ONLY"
 
 if [ "$NO_DNS" = false ]; then
     prompt_input "FQDN (app-specific)" "" "APP_FQDN"
@@ -145,7 +145,7 @@ echo ""
 
 # Use global or app-specific values
 FINAL_AWS_PROFILE="${APP_AWS_PROFILE:-$AWS_PROFILE}"
-FINAL_SUBNET_ONLY="${APP_SUBNET_ONLY:-$SUBNET_ONLY}"
+FINAL_SUBNETS_ONLY="${APP_SUBNETS_ONLY:-$SUBNETS_ONLY}"
 FINAL_FQDN="${APP_FQDN:-$FQDN}"
 
 if [ "$NO_DNS" = false ] && [ -z "$FINAL_FQDN" ]; then
@@ -154,7 +154,7 @@ if [ "$NO_DNS" = false ] && [ -z "$FINAL_FQDN" ]; then
 fi
 
 echo -e "${GREEN}✓ AWS Profile: $FINAL_AWS_PROFILE${NC}"
-echo -e "${GREEN}✓ Subnet Only: ${FINAL_SUBNET_ONLY:-none}${NC}"
+echo -e "${GREEN}✓ Subnets Only: ${FINAL_SUBNETS_ONLY:-none}${NC}"
 if [ "$NO_DNS" = false ]; then
     echo -e "${GREEN}✓ FQDN: $FINAL_FQDN${NC}"
 fi
@@ -220,7 +220,7 @@ ENVEOF
 # Note: AWS_PROFILE is NOT used in Lambda - Lambda uses IAM roles instead
 cat > "$BUILD_DIR/config.json" << EOF
 {
-  "subnet_only": "$FINAL_SUBNET_ONLY",
+  "subnets_only": "$FINAL_SUBNETS_ONLY",
   "fqdn": "$FINAL_FQDN"
 }
 EOF
@@ -238,8 +238,8 @@ config = json.load(open(config_file))
 
 # Set environment variables
 # Note: Lambda uses IAM role for AWS credentials, NOT AWS_PROFILE
-if config.get('subnet_only'):
-    os.environ['SUBNET_ONLY'] = config['subnet_only']
+if config.get('subnets_only'):
+    os.environ['SUBNETS_ONLY'] = config['subnets_only']
 if config.get('fqdn'):
     os.environ['FQDN'] = config['fqdn']
 

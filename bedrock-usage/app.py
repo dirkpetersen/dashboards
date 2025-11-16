@@ -22,9 +22,9 @@ def get_config(variable_name, default=None):
     Get configuration value with dashboard-specific override support.
 
     Example:
-        get_config('SUBNET_ONLY') will look for:
-        1. SUBNET_ONLY_BEDROCK_USAGE (if script is bedrock-usage.py)
-        2. SUBNET_ONLY (global fallback)
+        get_config('SUBNETS_ONLY') will look for:
+        1. SUBNETS_ONLY_BEDROCK_USAGE (if script is bedrock-usage.py)
+        2. SUBNETS_ONLY (global fallback)
         3. default value
     """
     # Try dashboard-specific variable first
@@ -268,108 +268,238 @@ VPN_ERROR_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>VPN Required</title>
+    <title>VPN Required - Access Denied</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+        * {
             margin: 0;
             padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', sans-serif;
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             display: flex;
             align-items: center;
             justify-content: center;
+            padding: 20px;
         }
         .container {
             background: white;
-            padding: 40px;
-            border-radius: 10px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+            padding: 50px 40px;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
             text-align: center;
-            max-width: 500px;
-            margin: 20px;
+            max-width: 600px;
+            width: 100%;
+            animation: slideUp 0.4s ease-out;
+        }
+        @keyframes slideUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
         }
         .icon {
-            font-size: 60px;
-            margin-bottom: 20px;
+            font-size: 80px;
+            margin-bottom: 25px;
+            animation: pulse 2s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
         }
         h1 {
-            color: #333;
-            margin: 20px 0 10px 0;
-            font-size: 28px;
+            color: #2d3748;
+            margin: 0 0 15px 0;
+            font-size: 32px;
+            font-weight: 700;
         }
-        p {
-            color: #666;
-            margin: 10px 0;
+        .subtitle {
+            color: #718096;
+            font-size: 18px;
+            margin-bottom: 30px;
             line-height: 1.6;
         }
         .info-box {
-            background: #f0f0f0;
-            border-left: 4px solid #667eea;
-            padding: 15px;
-            margin: 20px 0;
+            background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+            border-left: 5px solid #667eea;
+            padding: 25px;
+            margin: 30px 0;
             text-align: left;
-            border-radius: 4px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
         }
-        .info-box strong {
-            color: #333;
+        .info-box h2 {
+            color: #2d3748;
+            font-size: 18px;
+            margin-bottom: 15px;
+            font-weight: 600;
         }
-        .info-box code {
+        .info-box ol {
+            margin-left: 20px;
+            color: #4a5568;
+        }
+        .info-box li {
+            margin: 10px 0;
+            line-height: 1.6;
+        }
+        .info-box .note {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #cbd5e0;
+            color: #718096;
+            font-size: 14px;
+            font-style: italic;
+        }
+        .details {
+            background: #f7fafc;
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 30px;
+        }
+        .details h3 {
+            color: #4a5568;
+            font-size: 14px;
+            font-weight: 600;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .details .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin: 8px 0;
+            padding: 8px 0;
+        }
+        .details .label {
+            color: #718096;
+            font-size: 14px;
+            font-weight: 500;
+        }
+        .details code {
             background: white;
-            padding: 2px 6px;
-            border-radius: 3px;
-            font-family: 'Courier New', monospace;
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Courier New', monospace;
             color: #d63384;
+            font-size: 13px;
+            border: 1px solid #e2e8f0;
+            display: inline-block;
+            max-width: 100%;
+            word-break: break-all;
+        }
+        .subnets-list {
+            text-align: left;
+            margin-top: 8px;
+        }
+        .subnets-list code {
+            display: block;
+            margin: 5px 0;
+        }
+        @media (max-width: 640px) {
+            .container {
+                padding: 40px 25px;
+            }
+            h1 {
+                font-size: 26px;
+            }
+            .subtitle {
+                font-size: 16px;
+            }
+            .details .info-row {
+                flex-direction: column;
+                gap: 8px;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="icon">🔒</div>
-        <h1>VPN Required</h1>
-        <p>This dashboard is only accessible from your organization's network.</p>
+        <h1>Access Denied</h1>
+        <p class="subtitle">This dashboard is only accessible from authorized networks.</p>
 
         <div class="info-box">
-            <p><strong>To access this page:</strong></p>
-            <p>1. Connect to your VPN</p>
-            <p>2. Refresh this page</p>
-            <p>If you continue to see this message, please contact your administrator.</p>
+            <h2>🔌 Connect to VPN</h2>
+            <ol>
+                <li><strong>Connect to your organization's VPN</strong></li>
+                <li><strong>Refresh this page</strong> (Ctrl+R or Cmd+R)</li>
+                <li>If the issue persists, contact your system administrator</li>
+            </ol>
+            <div class="note">
+                💡 Make sure you're connected to the correct VPN profile for this service
+            </div>
         </div>
 
-        <p style="color: #999; font-size: 12px; margin-top: 30px;">
-            Your IP: <code>{{ client_ip }}</code><br>
-            Allowed subnet: <code>{{ allowed_subnet }}</code>
-        </p>
+        <div class="details">
+            <h3>Connection Details</h3>
+            <div class="info-row">
+                <span class="label">Your IP Address:</span>
+                <code>{{ client_ip }}</code>
+            </div>
+            <div class="info-row">
+                <span class="label">Allowed Networks:</span>
+                <div class="subnets-list">
+                    {% for subnet in allowed_subnets.split(', ') %}
+                    <code>{{ subnet }}</code>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
     </div>
 </body>
 </html>
 """
 
 # Get configuration from environment (with dashboard-specific overrides)
-SUBNET_ONLY = get_config('SUBNET_ONLY')
+SUBNETS_ONLY = get_config('SUBNETS_ONLY')
 AWS_PROFILE = get_config('AWS_PROFILE')
 FQDN = get_config('FQDN')
 
 def check_subnet_access():
-    """Middleware to check if client IP is within allowed subnet"""
-    if not SUBNET_ONLY:
+    """Middleware to check if client IP is within allowed subnets (comma-separated list)"""
+    if not SUBNETS_ONLY:
         # No subnet restriction configured
         return True
 
     try:
         client_ip = request.remote_addr
-        allowed_network = ipaddress.ip_network(SUBNET_ONLY, strict=False)
         client_ip_obj = ipaddress.ip_address(client_ip)
 
-        if client_ip_obj in allowed_network:
-            return True
-        else:
-            # IP is not in allowed subnet
-            return render_template_string(
-                VPN_ERROR_TEMPLATE,
-                client_ip=client_ip,
-                allowed_subnet=SUBNET_ONLY
-            ), 403
+        # Parse comma-separated list of subnets and always include localhost
+        allowed_subnets = [s.strip() for s in SUBNETS_ONLY.split(',') if s.strip()]
+
+        # Always allow localhost (127.0.0.1/8)
+        if '127.0.0.1/8' not in allowed_subnets and '127.0.0.0/8' not in allowed_subnets:
+            allowed_subnets.append('127.0.0.1/8')
+
+        # Check if client IP is in any allowed subnet
+        for subnet_str in allowed_subnets:
+            try:
+                allowed_network = ipaddress.ip_network(subnet_str, strict=False)
+                if client_ip_obj in allowed_network:
+                    return True
+            except ValueError as ve:
+                print(f"WARNING: Invalid subnet in SUBNETS_ONLY: {subnet_str} - {ve}")
+                continue
+
+        # IP is not in any allowed subnet
+        return render_template_string(
+            VPN_ERROR_TEMPLATE,
+            client_ip=client_ip,
+            allowed_subnets=', '.join(allowed_subnets)
+        ), 403
     except Exception as e:
         print(f"ERROR checking subnet access: {e}")
         return True  # Allow access if there's an error checking
