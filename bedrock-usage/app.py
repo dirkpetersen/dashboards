@@ -268,7 +268,7 @@ VPN_ERROR_TEMPLATE = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>VPN Required - Access Denied</title>
+    <title>VPN Required</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         * {
@@ -427,7 +427,7 @@ VPN_ERROR_TEMPLATE = """
 <body>
     <div class="container">
         <div class="icon">🔒</div>
-        <h1>Access Denied</h1>
+        <h1>VPN Required</h1>
         <p class="subtitle">This dashboard is only accessible from authorized networks.</p>
 
         <div class="info-box">
