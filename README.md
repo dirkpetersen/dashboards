@@ -56,6 +56,102 @@ pip install -r requirements.txt
 
 Then open `http://localhost:5000` in your browser.
 
+## Cost Notifications
+
+Set up automated email alerts when your AWS costs reach specific thresholds. Get notified immediately when spending crosses $100, $500, $1000, or any custom amounts you define.
+
+### Quick Setup
+
+```bash
+# Setup cost notifications with multiple thresholds
+./cost-notification.sh --profile prod --dollar 100,500,1000 --to finance@company.com,devops@company.com
+```
+
+### How It Works
+
+The script creates a multi-layered notification system:
+
+1. **AWS Budgets** - Alerts when actual or forecasted monthly spend reaches your thresholds
+2. **CloudWatch Billing Alarms** - Backup alerts using AWS's estimated charges metric
+3. **SNS Topic** - Central notification hub for all billing alerts
+4. **Email Subscriptions** - Sends alerts to specified email addresses
+
+### Features
+
+- **Multiple thresholds** - Set alerts at $100, $250, $500, $1000+ or any amounts
+- **Multiple recipients** - Notify finance, devops, and other teams
+- **Real-time alerts** - Get notified when thresholds are crossed
+- **Automatic sorting** - Thresholds are automatically organized in order
+- **Idempotent** - Safe to run multiple times; won't create duplicate alerts
+
+### Usage
+
+```bash
+./cost-notification.sh \
+  --profile <aws-profile> \
+  --dollar <threshold1,threshold2,threshold3> \
+  --to <email1,email2>
+```
+
+**Parameters:**
+- `--profile`: AWS CLI profile to use (default: environment variable `AWS_PROFILE` or `default`)
+- `--dollar`: Comma-separated cost thresholds in USD (e.g., `100,250.50,500,1000`)
+- `--to`: Comma-separated email addresses for notifications
+
+**Examples:**
+
+```bash
+# Single threshold, single email
+./cost-notification.sh --profile prod --dollar 100 --to admin@example.com
+
+# Multiple thresholds, multiple recipients
+./cost-notification.sh --profile prod --dollar 50,100,250,500,1000 \
+  --to finance@company.com,devops@company.com,cto@company.com
+
+# Using decimal amounts with environment variable
+AWS_PROFILE=prod ./cost-notification.sh --dollar 99.99,249.99,499.99 --to billing@company.com
+```
+
+### Important: Email Confirmation
+
+After running the script:
+
+1. Check your email inboxes for **AWS SNS Subscription Confirmation** messages
+2. Click the confirmation link in each email
+3. **Without confirmation, you will NOT receive alerts**
+
+The confirmation ensures only authorized recipients receive notifications.
+
+### Managing Notifications
+
+**View SNS topic subscriptions:**
+```bash
+aws sns list-subscriptions-by-topic --topic-arn <topic-arn> --profile prod
+```
+
+**View AWS Budgets:**
+```bash
+aws budgets describe-budgets --account-id <account-id> --profile prod
+```
+
+**View CloudWatch alarms:**
+```bash
+aws cloudwatch describe-alarms --profile prod
+```
+
+**Delete a budget** (to remove a threshold):
+```bash
+aws budgets delete-budget \
+  --account-id <account-id> \
+  --budget-name cost-alert-100usd-<account-id> \
+  --profile prod
+```
+
+**Delete a CloudWatch alarm:**
+```bash
+aws cloudwatch delete-alarms --alarm-names billing-alert-100usd --profile prod
+```
+
 ## Deployment Options
 
 ### Option 1: User Systemd Service (Recommended for VPS/Servers)
@@ -80,19 +176,105 @@ loginctl enable-linger
 
 Access the dashboard at `http://localhost:5000`
 
-### Option 2: AWS Lambda with API Gateway (Coming Soon)
+### Option 2: AWS Lambda with API Gateway (Serverless)
 
-Deploy as a serverless function with automatic scaling:
+Deploy as a serverless function with automatic scaling, automatic SSL/TLS certificates, and custom domain support:
+
+#### Basic Deployment
+
+Deploy with API Gateway endpoint only (no custom domain):
 
 ```bash
-# Deploy to Lambda (detailed setup documentation in progress)
-AWS_PROFILE=deploy-admin ./setup-lambda.sh bedrock-usage
-
-# Remove deployment
-AWS_PROFILE=deploy-admin ./remove-lambda.sh bedrock-usage app.example.com
+./setup-lambda.sh bedrock-usage --profile prod
 ```
 
-**Note**: AWS Lambda deployment automation is currently under development. Detailed setup instructions will be available soon.
+Your dashboard will be available at the generated API Gateway endpoint (e.g., `https://abcd1234.execute-api.us-west-2.amazonaws.com`)
+
+#### Deployment with Custom Domain and HTTPS
+
+Deploy with a custom domain name and automatically provisioned SSL certificate:
+
+```bash
+./setup-lambda.sh bedrock-usage \
+  --profile prod \
+  --fqdn bedrock.example.com
+```
+
+The script will:
+1. Create an AWS Certificate Manager (ACM) certificate with DNS validation
+2. Validate the certificate via Route 53
+3. Set up an API Gateway custom domain
+4. Configure HTTPS/TLS automatically
+5. Create Route 53 alias record pointing to the custom domain
+
+Your dashboard will be available at `https://bedrock.example.com`
+
+#### Advanced: Cross-Account Deployments
+
+For deployments where your main AWS profile lacks IAM permissions to create Lambda roles:
+
+```bash
+./setup-lambda.sh bedrock-usage \
+  --profile main-account \
+  --iam-profile admin-account \
+  --fqdn bedrock.example.com \
+  --subnets-only 10.0.0.0/8,172.16.0.0/12
+```
+
+**Parameters:**
+- `--profile`: AWS profile for Lambda, API Gateway, and domain operations (requires appropriate permissions)
+- `--iam-profile`: (Optional) Admin profile for IAM role creation if `--profile` lacks permissions
+- `--fqdn`: (Optional) Fully qualified domain name for Route 53. If omitted, uses API Gateway endpoint only
+- `--subnets-only`: (Optional) Comma-separated CIDR blocks to restrict access (e.g., `10.0.0.0/8,192.168.0.0/16`)
+
+**Requirements for custom domain:**
+- Route 53 hosted zone must exist for your domain (or parent domain)
+- Route 53 zone must be in the same AWS account as `--profile`
+
+#### SSL/HTTPS Configuration
+
+When `--fqdn` is provided, the script automatically:
+
+1. **Creates ACM Certificate** - Requests a free SSL certificate from AWS Certificate Manager
+2. **Validates via DNS** - Creates a CNAME validation record in Route 53 (automatic)
+3. **Waits for Issuance** - Polls ACM until certificate is issued (typically 5-10 minutes)
+4. **Binds to API Gateway** - Creates a custom domain name and binds the certificate
+5. **Updates Route 53** - Creates an alias record pointing to the custom domain
+
+The certificate is automatically renewed by AWS.
+
+#### Remove Deployment
+
+```bash
+./remove-lambda.sh bedrock-usage app.example.com
+```
+
+#### Manage Deployment
+
+**View Lambda function:**
+```bash
+aws lambda get-function --function-name bedrock-usage-api --profile prod
+```
+
+**View logs:**
+```bash
+aws logs tail /aws/lambda/bedrock-usage-api --follow --profile prod
+```
+
+**Update function code:**
+```bash
+./setup-lambda.sh bedrock-usage --profile prod --fqdn bedrock.example.com
+```
+
+**DNS troubleshooting:**
+```bash
+# Check DNS resolution
+nslookup bedrock.example.com
+dig bedrock.example.com
+
+# Check certificate status
+aws acm describe-certificate --certificate-arn <arn> --region us-west-2 --profile prod
+```
 
 ## Configuration
 

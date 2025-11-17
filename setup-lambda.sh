@@ -2,7 +2,7 @@
 
 # Deploy Flask application as AWS Lambda function with API Gateway
 # Supports all dashboards with their own settings
-# Usage: AWS_PROFILE=deploy-admin ./setup-lambda.sh bedrock-usage [--no-dns]
+# Usage: ./setup-lambda.sh <folder-name> [--profile <profile>] [--fqdn <domain>] [--subnets-only <cidr,...>]
 
 set -e
 
@@ -14,14 +14,52 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Parse arguments
-NO_DNS=false
 DASHBOARD_NAME=""
+AWS_PROFILE="${AWS_PROFILE:-default}"
+IAM_PROFILE=""
+FQDN=""
+SUBNETS_ONLY=""
 
 while [[ $# -gt 0 ]]; do
     case $1 in
-        --no-dns)
-            NO_DNS=true
-            shift
+        --help|-h)
+            echo "Usage: $0 <folder-name> [--profile <profile>] [--iam-profile <profile>] [--fqdn <domain>] [--subnets-only <cidr,...>]"
+            echo ""
+            echo "Options:"
+            echo "  --profile <profile>          AWS CLI profile to use (default: AWS_PROFILE env var or 'default')"
+            echo "                               Requires Lambda, API Gateway, and IAM permissions"
+            echo "  --iam-profile <profile>      IAM admin profile for granting permissions when --profile lacks IAM access"
+            echo "                               Used only if --profile fails due to insufficient permissions"
+            echo "  --fqdn <domain>              Fully qualified domain name for Route 53 (if omitted, uses API Gateway endpoint only)"
+            echo "  --subnets-only <cidr,...>    Comma-separated CIDR blocks for access control (e.g., 192.168.0.0/16,10.0.0.0/8)"
+            echo "  --help                       Show this help message"
+            echo ""
+            echo "Examples:"
+            echo "  ./setup-lambda.sh <folder> --profile prod"
+            echo "  ./setup-lambda.sh <folder> --profile prod --fqdn bedrock.example.com"
+            echo "  ./setup-lambda.sh <folder> --profile prod --fqdn bedrock.example.com --subnets-only 192.168.0.0/16"
+            echo "  ./setup-lambda.sh <folder> --profile prod --iam-profile admin --subnets-only 192.168.0.0/16"
+            echo ""
+            echo "Environment Variables (can be overridden by command-line args):"
+            echo "  AWS_PROFILE         AWS CLI profile (override with --profile)"
+            echo "  IAM_PROFILE         IAM admin profile (override with --iam-profile)"
+            exit 0
+            ;;
+        --profile)
+            AWS_PROFILE="$2"
+            shift 2
+            ;;
+        --iam-profile)
+            IAM_PROFILE="$2"
+            shift 2
+            ;;
+        --fqdn)
+            FQDN="$2"
+            shift 2
+            ;;
+        --subnets-only)
+            SUBNETS_ONLY="$2"
+            shift 2
             ;;
         *)
             if [ -z "$DASHBOARD_NAME" ]; then
@@ -37,14 +75,25 @@ done
 
 # Check if dashboard name was provided
 if [ -z "$DASHBOARD_NAME" ]; then
-    echo "Usage: $0 <dashboard-name> [--no-dns]"
+    echo "Usage: $0 <folder-name> [--profile <profile>] [--iam-profile <profile>] [--fqdn <domain>] [--subnets-only <cidr,...>]"
     echo ""
     echo "Options:"
-    echo "  --no-dns    Deploy without Route 53 DNS (use API Gateway endpoint only)"
+    echo "  --profile <profile>          AWS CLI profile to use (default: AWS_PROFILE env var or 'default')"
+    echo "                               Requires Lambda, API Gateway, and IAM permissions"
+    echo "  --iam-profile <profile>      IAM admin profile for granting permissions when --profile lacks IAM access"
+    echo "                               Used only if --profile fails due to insufficient permissions"
+    echo "  --fqdn <domain>              Fully qualified domain name for Route 53 (if omitted, uses API Gateway endpoint only)"
+    echo "  --subnets-only <cidr,...>    Comma-separated CIDR blocks for access control (e.g., 192.168.0.0/16,10.0.0.0/8)"
     echo ""
     echo "Examples:"
-    echo "  AWS_PROFILE=deploy-admin ./setup-lambda.sh bedrock-usage"
-    echo "  AWS_PROFILE=deploy-admin ./setup-lambda.sh bedrock-usage --no-dns"
+    echo "  ./setup-lambda.sh <folder> --profile prod"
+    echo "  ./setup-lambda.sh <folder> --profile prod --fqdn bedrock.example.com"
+    echo "  ./setup-lambda.sh <folder> --profile prod --fqdn bedrock.example.com --subnets-only 192.168.0.0/16"
+    echo "  ./setup-lambda.sh <folder> --profile prod --iam-profile admin --subnets-only 192.168.0.0/16"
+    echo ""
+    echo "Environment Variables (can be overridden by command-line args):"
+    echo "  AWS_PROFILE         AWS CLI profile (override with --profile)"
+    echo "  IAM_PROFILE         IAM admin profile (override with --iam-profile)"
     exit 1
 fi
 
@@ -64,7 +113,7 @@ fi
 
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
 echo -e "${BLUE}AWS Lambda Deployment for $DASHBOARD_NAME${NC}"
-if [ "$NO_DNS" = true ]; then
+if [ -z "$FINAL_FQDN" ]; then
     echo -e "${BLUE}(No Route 53 DNS - API Gateway endpoint only)${NC}"
 fi
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
@@ -78,17 +127,27 @@ fi
 
 # Check AWS credentials
 echo -e "${BLUE}Checking AWS credentials...${NC}"
-ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text 2>/dev/null || true)
+ACCOUNT_ID=$(aws sts get-caller-identity --profile "$AWS_PROFILE" --query Account --output text 2>/dev/null || true)
 
 if [ -z "$ACCOUNT_ID" ]; then
     echo -e "${RED}❌ Error: Unable to authenticate with AWS${NC}"
-    echo "Make sure AWS_PROFILE is set correctly"
+    echo "Make sure --profile or AWS_PROFILE is set correctly"
     exit 1
 fi
 
-REGION=$(aws configure get region || echo "us-east-1")
+REGION=$(aws configure get region --profile "$AWS_PROFILE" || echo "us-east-1")
+echo -e "${GREEN}✓ Profile: $AWS_PROFILE${NC}"
 echo -e "${GREEN}✓ Account ID: $ACCOUNT_ID${NC}"
 echo -e "${GREEN}✓ Region: $REGION${NC}"
+if [ -n "$IAM_PROFILE" ]; then
+    echo -e "${GREEN}✓ IAM Profile: $IAM_PROFILE (for permission grants)${NC}"
+fi
+if [ -n "$FQDN" ]; then
+    echo -e "${GREEN}✓ FQDN: $FQDN${NC}"
+fi
+if [ -n "$SUBNETS_ONLY" ]; then
+    echo -e "${GREEN}✓ Subnets: $SUBNETS_ONLY${NC}"
+fi
 echo ""
 
 # Function to prompt for input with default value
@@ -114,67 +173,90 @@ get_app_var() {
     echo "${var_name}_${DASHBOARD_NAME^^}"
 }
 
-# Prompt for configuration
+# Configuration settings
+# Use command-line arguments if provided, otherwise prompt
 echo -e "${YELLOW}════════════════════════════════════════════════════════════${NC}"
 echo -e "${YELLOW}CONFIGURATION SETTINGS${NC}"
 echo -e "${YELLOW}════════════════════════════════════════════════════════════${NC}"
 echo ""
 
-echo -e "${BLUE}Global Settings (apply to all dashboards):${NC}"
-prompt_input "AWS Profile" "default" "AWS_PROFILE"
-prompt_input "Subnets restriction (comma-separated CIDRs, leave empty for no restriction)" "" "SUBNETS_ONLY"
+# If command-line args were provided, use them directly
+if [ -n "$FQDN" ] || [ -n "$SUBNETS_ONLY" ] || [ "$AWS_PROFILE" != "default" ]; then
+    # Command-line arguments were provided, skip interactive prompts
+    echo -e "${GREEN}Using command-line arguments (non-interactive mode)${NC}"
+    echo ""
 
-if [ "$NO_DNS" = false ]; then
-    prompt_input "FQDN (fully qualified domain name)" "" "FQDN"
-fi
-echo ""
+    FINAL_AWS_PROFILE="$AWS_PROFILE"
+    FINAL_SUBNETS_ONLY="$SUBNETS_ONLY"
+    FINAL_FQDN="$FQDN"
+else
+    # Interactive mode: prompt for configuration
+    echo -e "${BLUE}Global Settings (apply to all dashboards):${NC}"
+    prompt_input "AWS Profile" "$AWS_PROFILE" "AWS_PROFILE"
+    prompt_input "Subnets restriction (comma-separated CIDRs, leave empty for no restriction)" "" "SUBNETS_ONLY"
+    prompt_input "FQDN (fully qualified domain name, leave empty to use API Gateway endpoint only)" "" "FQDN"
+    echo ""
 
-APP_AWS_VAR=$(get_app_var "AWS_PROFILE")
-APP_SUBNET_VAR=$(get_app_var "SUBNETS_ONLY")
-APP_FQDN_VAR=$(get_app_var "FQDN")
+    APP_AWS_VAR=$(get_app_var "AWS_PROFILE")
+    APP_SUBNET_VAR=$(get_app_var "SUBNETS_ONLY")
+    APP_FQDN_VAR=$(get_app_var "FQDN")
 
-echo -e "${BLUE}Dashboard-Specific Settings (override global):${NC}"
-echo "(Leave blank to use global settings)"
-prompt_input "AWS Profile (app-specific)" "" "APP_AWS_PROFILE"
-prompt_input "Subnets restriction (app-specific)" "" "APP_SUBNETS_ONLY"
+    echo -e "${BLUE}Dashboard-Specific Settings (override global):${NC}"
+    echo "(Leave blank to use global settings)"
+    prompt_input "AWS Profile (app-specific)" "" "APP_AWS_PROFILE"
+    prompt_input "Subnets restriction (app-specific)" "" "APP_SUBNETS_ONLY"
+    prompt_input "FQDN (app-specific, leave empty to use API Gateway endpoint only)" "" "APP_FQDN"
+    echo ""
 
-if [ "$NO_DNS" = false ]; then
-    prompt_input "FQDN (app-specific)" "" "APP_FQDN"
-fi
-echo ""
-
-# Use global or app-specific values
-FINAL_AWS_PROFILE="${APP_AWS_PROFILE:-$AWS_PROFILE}"
-FINAL_SUBNETS_ONLY="${APP_SUBNETS_ONLY:-$SUBNETS_ONLY}"
-FINAL_FQDN="${APP_FQDN:-$FQDN}"
-
-if [ "$NO_DNS" = false ] && [ -z "$FINAL_FQDN" ]; then
-    echo -e "${RED}❌ Error: FQDN is required (use --no-dns to skip DNS setup)${NC}"
-    exit 1
+    # Use global or app-specific values
+    FINAL_AWS_PROFILE="${APP_AWS_PROFILE:-$AWS_PROFILE}"
+    FINAL_SUBNETS_ONLY="${APP_SUBNETS_ONLY:-$SUBNETS_ONLY}"
+    FINAL_FQDN="${APP_FQDN:-$FQDN}"
 fi
 
 echo -e "${GREEN}✓ AWS Profile: $FINAL_AWS_PROFILE${NC}"
 echo -e "${GREEN}✓ Subnets Only: ${FINAL_SUBNETS_ONLY:-none}${NC}"
-if [ "$NO_DNS" = false ]; then
+if [ -n "$FINAL_FQDN" ]; then
     echo -e "${GREEN}✓ FQDN: $FINAL_FQDN${NC}"
 fi
 echo ""
 
-# Extract domain from FQDN (last two parts for Route 53 hosted zone)
+# Find matching Route 53 hosted zone for FQDN
 # Only if DNS is enabled
-if [ "$NO_DNS" = false ]; then
-    # Example: app.example.com -> example.com
-    IFS='.' read -ra FQDN_PARTS <<< "$FINAL_FQDN"
-    DOMAIN_LENGTH=${#FQDN_PARTS[@]}
+if [ -n "$FINAL_FQDN" ]; then
+    # Try to find the exact hosted zone that matches this FQDN
+    # Start with full domain, then try parent domains
+    CURRENT_DOMAIN="$FINAL_FQDN"
+    HOSTED_ZONE=""
 
-    if [ $DOMAIN_LENGTH -lt 2 ]; then
-        echo -e "${RED}❌ Error: Invalid FQDN format: $FINAL_FQDN${NC}"
+    while [ -n "$CURRENT_DOMAIN" ]; do
+        # Query Route 53 for this domain
+        ZONE_CHECK=$(aws route53 list-hosted-zones-by-name \
+            --profile "$FINAL_AWS_PROFILE" \
+            --query "HostedZones[?Name=='${CURRENT_DOMAIN}.'].Name" \
+            --output text 2>/dev/null || echo "")
+
+        if [ -n "$ZONE_CHECK" ]; then
+            HOSTED_ZONE="$CURRENT_DOMAIN"
+            break
+        fi
+
+        # Try parent domain (remove first part)
+        CURRENT_DOMAIN="${CURRENT_DOMAIN#*.}"
+
+        # Prevent infinite loop
+        if [ "$CURRENT_DOMAIN" = "$PREVIOUS_DOMAIN" ]; then
+            break
+        fi
+        PREVIOUS_DOMAIN="$CURRENT_DOMAIN"
+    done
+
+    if [ -z "$HOSTED_ZONE" ]; then
+        echo -e "${RED}❌ Error: Could not find Route 53 hosted zone for: $FINAL_FQDN${NC}"
+        echo "Available zones: "
+        aws route53 list-hosted-zones --profile "$FINAL_AWS_PROFILE" --query "HostedZones[].Name" --output text
         exit 1
     fi
-
-    # Get the last two parts (domain + TLD)
-    HOSTED_ZONE="${FQDN_PARTS[$((DOMAIN_LENGTH-2))]} . ${FQDN_PARTS[$((DOMAIN_LENGTH-1))]}"
-    HOSTED_ZONE="${HOSTED_ZONE// /}"
 fi
 
 echo -e "${BLUE}════════════════════════════════════════════════════════════${NC}"
@@ -183,9 +265,9 @@ echo -e "${BLUE}═════════════════════�
 echo ""
 
 # Step 1: Check if Route 53 hosted zone exists (skip if --no-dns)
-if [ "$NO_DNS" = false ]; then
+if [ -n "$FINAL_FQDN" ]; then
     echo -e "${BLUE}Step 1: Checking Route 53 hosted zone...${NC}"
-    ZONE_ID=$(aws route53 list-hosted-zones-by-name --query "HostedZones[?Name=='${HOSTED_ZONE}.'].Id" --output text 2>/dev/null | cut -d'/' -f3)
+    ZONE_ID=$(aws route53 list-hosted-zones-by-name --profile "$FINAL_AWS_PROFILE" --query "HostedZones[?Name=='${HOSTED_ZONE}.'].Id" --output text 2>/dev/null | cut -d'/' -f3)
 
     if [ -z "$ZONE_ID" ]; then
         echo -e "${RED}❌ Error: Route 53 hosted zone not found for: $HOSTED_ZONE${NC}"
@@ -327,16 +409,47 @@ LAMBDA_ROLE_NAME="lambda-${DASHBOARD_NAME}-role"
 LAMBDA_ROLE_ARN="arn:aws:iam::${ACCOUNT_ID}:role/${LAMBDA_ROLE_NAME}"
 
 # Check if function exists
-if aws lambda get-function --function-name "$LAMBDA_FUNCTION_NAME" 2>/dev/null; then
+if aws lambda get-function --profile "$FINAL_AWS_PROFILE" --function-name "$LAMBDA_FUNCTION_NAME" 2>/dev/null; then
     echo -e "${YELLOW}Updating existing Lambda function...${NC}"
-    aws lambda update-function-code \
+    aws lambda update-function-code --profile "$FINAL_AWS_PROFILE" \
         --function-name "$LAMBDA_FUNCTION_NAME" \
         --zip-file "fileb://${BUILD_DIR}/${LAMBDA_FUNCTION_NAME}.zip" > /dev/null
 else
     echo -e "${YELLOW}Creating new Lambda function...${NC}"
 
-    # Check if role exists, if not create it
-    if ! aws iam get-role --role-name "$LAMBDA_ROLE_NAME" 2>/dev/null; then
+    # Determine which profile to use for IAM operations
+    IAM_OPS_PROFILE="$FINAL_AWS_PROFILE"
+    if [ -n "$IAM_PROFILE" ]; then
+        # Test if FINAL_AWS_PROFILE has IAM permissions, fallback to IAM_PROFILE if not
+        TRUST_POLICY='{
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {
+                "Service": "lambda.amazonaws.com"
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        }'
+        if ! aws iam create-role --profile "$FINAL_AWS_PROFILE" --dry-run \
+            --role-name "test-role-$$" \
+            --assume-role-policy-document "$TRUST_POLICY" 2>/dev/null; then
+            echo -e "${YELLOW}⚠️  $FINAL_AWS_PROFILE lacks IAM permissions, using $IAM_PROFILE for IAM operations${NC}"
+            IAM_OPS_PROFILE="$IAM_PROFILE"
+        fi
+    fi
+
+    # Check if role exists (try both profiles if applicable)
+    ROLE_EXISTS=false
+    if aws iam get-role --profile "$FINAL_AWS_PROFILE" --role-name "$LAMBDA_ROLE_NAME" 2>/dev/null; then
+        ROLE_EXISTS=true
+    elif [ -n "$IAM_PROFILE" ] && aws iam get-role --profile "$IAM_PROFILE" --role-name "$LAMBDA_ROLE_NAME" 2>/dev/null; then
+        ROLE_EXISTS=true
+    fi
+
+    if [ "$ROLE_EXISTS" = false ]; then
         echo -e "${YELLOW}Creating IAM role for Lambda...${NC}"
 
         TRUST_POLICY='{
@@ -352,12 +465,12 @@ else
           ]
         }'
 
-        aws iam create-role \
+        aws iam create-role --profile "$IAM_OPS_PROFILE" \
             --role-name "$LAMBDA_ROLE_NAME" \
             --assume-role-policy-document "$TRUST_POLICY" > /dev/null
 
         # Attach policy for CloudWatch logs
-        aws iam attach-role-policy \
+        aws iam attach-role-policy --profile "$IAM_OPS_PROFILE" \
             --role-name "$LAMBDA_ROLE_NAME" \
             --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole > /dev/null
 
@@ -383,19 +496,22 @@ else
           ]
         }'
 
-        aws iam put-role-policy \
+        aws iam put-role-policy --profile "$IAM_OPS_PROFILE" \
             --role-name "$LAMBDA_ROLE_NAME" \
             --policy-name "$BEDROCK_POLICY_NAME" \
             --policy-document "$BEDROCK_POLICY_DOCUMENT" > /dev/null
 
         echo -e "${GREEN}✓ Created IAM role: $LAMBDA_ROLE_NAME${NC}"
+        if [ "$IAM_OPS_PROFILE" != "$FINAL_AWS_PROFILE" ]; then
+            echo -e "${GREEN}✓ Granted using: $IAM_OPS_PROFILE${NC}"
+        fi
 
         # Wait for IAM role to propagate
         echo -e "${YELLOW}Waiting for IAM role to propagate (10 seconds)...${NC}"
         sleep 10
     fi
 
-    aws lambda create-function \
+    aws lambda create-function --profile "$FINAL_AWS_PROFILE" \
         --function-name "$LAMBDA_FUNCTION_NAME" \
         --runtime python3.11 \
         --role "$LAMBDA_ROLE_ARN" \
@@ -417,12 +533,12 @@ echo -e "${BLUE}Step 4: Setting up API Gateway...${NC}"
 API_NAME="${DASHBOARD_NAME}-api"
 
 # Check if API exists
-API_ID=$(aws apigatewayv2 get-apis --query "Items[?Name=='$API_NAME'].ApiId" --output text 2>/dev/null)
+API_ID=$(aws apigatewayv2 get-apis --profile "$FINAL_AWS_PROFILE" --query "Items[?Name=='$API_NAME'].ApiId" --output text 2>/dev/null)
 
 if [ -z "$API_ID" ]; then
     echo -e "${YELLOW}Creating new API Gateway...${NC}"
 
-    API_ID=$(aws apigatewayv2 create-api \
+    API_ID=$(aws apigatewayv2 create-api --profile "$FINAL_AWS_PROFILE" \
         --name "$API_NAME" \
         --protocol-type HTTP \
         --target "arn:aws:lambda:${REGION}:${ACCOUNT_ID}:function:${LAMBDA_FUNCTION_NAME}" \
@@ -436,7 +552,7 @@ API_ENDPOINT="${API_ID}.execute-api.${REGION}.amazonaws.com"
 
 # Grant API Gateway permission to invoke Lambda
 echo -e "${YELLOW}Granting API Gateway invoke permission to Lambda...${NC}"
-aws lambda add-permission \
+aws lambda add-permission --profile "$FINAL_AWS_PROFILE" \
     --function-name "$LAMBDA_FUNCTION_NAME" \
     --statement-id AllowAPIGatewayInvoke \
     --action lambda:InvokeFunction \
@@ -447,51 +563,215 @@ echo -e "${GREEN}✓ API Gateway: $API_ID${NC}"
 echo -e "${GREEN}✓ API Endpoint: https://${API_ENDPOINT}${NC}"
 echo ""
 
-# Step 5: Create DNS record (skip if --no-dns)
-if [ "$NO_DNS" = false ]; then
-    echo -e "${BLUE}Step 5: Creating Route 53 DNS record...${NC}"
+# Step 5: Setup SSL Certificate and Custom Domain (if FQDN provided)
+if [ -n "$FINAL_FQDN" ]; then
+    echo -e "${BLUE}Step 5: Setting up SSL certificate and custom domain...${NC}"
 
-    # Check if record exists
-    EXISTING_RECORD=$(aws route53 list-resource-record-sets \
-        --hosted-zone-id "$ZONE_ID" \
-        --query "ResourceRecordSets[?Name=='${FINAL_FQDN}.'].ResourceRecords[0].Value" \
-        --output text 2>/dev/null || echo "")
+    # Step 5a: Create ACM Certificate
+    echo -e "${YELLOW}Creating ACM certificate for $FINAL_FQDN...${NC}"
 
-    if [ "$EXISTING_RECORD" != "None" ] && [ -n "$EXISTING_RECORD" ]; then
-        echo -e "${YELLOW}Updating existing DNS record...${NC}"
-
-        CHANGE_BATCH="{
-          \"Changes\": [{
-            \"Action\": \"UPSERT\",
-            \"ResourceRecordSet\": {
-              \"Name\": \"${FINAL_FQDN}\",
-              \"Type\": \"CNAME\",
-              \"TTL\": 300,
-              \"ResourceRecords\": [{\"Value\": \"${API_ENDPOINT}\"}]
-            }
-          }]
-        }"
-    else
-        CHANGE_BATCH="{
-          \"Changes\": [{
-            \"Action\": \"CREATE\",
-            \"ResourceRecordSet\": {
-              \"Name\": \"${FINAL_FQDN}\",
-              \"Type\": \"CNAME\",
-              \"TTL\": 300,
-              \"ResourceRecords\": [{\"Value\": \"${API_ENDPOINT}\"}]
-            }
-          }]
-        }"
-    fi
-
-    CHANGE_INFO=$(aws route53 change-resource-record-sets \
-        --hosted-zone-id "$ZONE_ID" \
-        --change-batch "$CHANGE_BATCH" \
-        --query 'ChangeInfo.Id' \
+    CERT_ARN=$(aws acm request-certificate \
+        --domain-name "$FINAL_FQDN" \
+        --validation-method DNS \
+        --region "$REGION" \
+        --profile "$FINAL_AWS_PROFILE" \
+        --query 'CertificateArn' \
         --output text)
 
-    echo -e "${GREEN}✓ DNS record created: $FINAL_FQDN -> $API_ENDPOINT${NC}"
+    if [ -z "$CERT_ARN" ]; then
+        echo -e "${RED}❌ Error: Failed to create ACM certificate${NC}"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ Created ACM certificate: $CERT_ARN${NC}"
+    echo -e "${YELLOW}Waiting for DNS validation records to be available...${NC}"
+
+    # Wait for certificate to have validation records
+    sleep 10
+    for i in {1..60}; do
+        VALIDATION_RECORDS=$(aws acm describe-certificate \
+            --certificate-arn "$CERT_ARN" \
+            --region "$REGION" \
+            --profile "$FINAL_AWS_PROFILE" \
+            --query 'Certificate.DomainValidationOptions[0].ResourceRecord' \
+            --output json 2>/dev/null || echo "{}")
+
+        if [ "$VALIDATION_RECORDS" != "{}" ] && [ "$VALIDATION_RECORDS" != "null" ]; then
+            break
+        fi
+        echo -e "${YELLOW}Waiting... (attempt $i/60)${NC}"
+        sleep 3
+    done
+
+    # Use jq to safely extract JSON fields if available, fallback to grep
+    if command -v jq &> /dev/null; then
+        VALIDATION_NAME=$(echo "$VALIDATION_RECORDS" | jq -r '.Name // empty')
+        VALIDATION_VALUE=$(echo "$VALIDATION_RECORDS" | jq -r '.Value // empty')
+    else
+        VALIDATION_NAME=$(echo "$VALIDATION_RECORDS" | grep -o '"Name": *"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
+        VALIDATION_VALUE=$(echo "$VALIDATION_RECORDS" | grep -o '"Value": *"[^"]*"' | head -1 | sed 's/.*"\([^"]*\)".*/\1/')
+    fi
+
+    if [ -z "$VALIDATION_NAME" ] || [ -z "$VALIDATION_VALUE" ]; then
+        echo -e "${RED}❌ Error: Could not retrieve DNS validation records${NC}"
+        echo "Certificate ARN: $CERT_ARN"
+        echo "You may need to validate manually in the AWS console"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ DNS validation records ready${NC}"
+    echo ""
+
+    # Step 5b: Create DNS validation record in Route 53
+    echo -e "${YELLOW}Creating DNS validation record in Route 53...${NC}"
+
+    aws route53 change-resource-record-sets \
+        --hosted-zone-id "$ZONE_ID" \
+        --profile "$FINAL_AWS_PROFILE" \
+        --change-batch "{
+            \"Changes\": [{
+                \"Action\": \"CREATE\",
+                \"ResourceRecordSet\": {
+                    \"Name\": \"$VALIDATION_NAME\",
+                    \"Type\": \"CNAME\",
+                    \"TTL\": 300,
+                    \"ResourceRecords\": [{\"Value\": \"$VALIDATION_VALUE\"}]
+                }
+            }]
+        }" > /dev/null 2>&1 || echo "Validation record may already exist"
+
+    echo -e "${GREEN}✓ Created DNS validation record${NC}"
+    echo -e "${YELLOW}Waiting for certificate validation (this can take 5-10 minutes)...${NC}"
+    echo ""
+
+    # Wait for certificate validation
+    VALIDATED=false
+    for i in {1..60}; do
+        CERT_STATUS=$(aws acm describe-certificate \
+            --certificate-arn "$CERT_ARN" \
+            --region "$REGION" \
+            --profile "$FINAL_AWS_PROFILE" \
+            --query 'Certificate.Status' \
+            --output text)
+
+        if [ "$CERT_STATUS" == "ISSUED" ]; then
+            VALIDATED=true
+            break
+        fi
+        echo -e "${YELLOW}Checking certificate status... (attempt $i/60 - Status: $CERT_STATUS)${NC}"
+        sleep 10
+    done
+
+    if [ "$VALIDATED" = false ]; then
+        echo -e "${RED}❌ Error: Certificate validation timeout${NC}"
+        echo "Certificate ARN: $CERT_ARN"
+        echo "Check the ACM console to verify validation"
+        exit 1
+    fi
+
+    echo -e "${GREEN}✓ Certificate validated and issued${NC}"
+    echo ""
+
+    # Step 5c: Create custom domain in API Gateway
+    echo -e "${YELLOW}Creating custom domain in API Gateway...${NC}"
+
+    CUSTOM_DOMAIN=$(aws apigatewayv2 create-domain-name \
+        --domain-name "$FINAL_FQDN" \
+        --domain-name-configurations CertificateArn="$CERT_ARN",EndpointType=REGIONAL \
+        --region "$REGION" \
+        --profile "$FINAL_AWS_PROFILE" \
+        --query 'DomainNameConfigurations[0].TargetDomainName' \
+        --output text 2>/dev/null || echo "")
+
+    if [ -z "$CUSTOM_DOMAIN" ]; then
+        # Domain might already exist, try to describe it
+        CUSTOM_DOMAIN=$(aws apigatewayv2 get-domain-names \
+            --region "$REGION" \
+            --profile "$FINAL_AWS_PROFILE" \
+            --query "Items[?Name=='$FINAL_FQDN'].DomainNameConfigurations[0].TargetDomainName" \
+            --output text 2>/dev/null || echo "")
+
+        if [ -z "$CUSTOM_DOMAIN" ]; then
+            echo -e "${RED}❌ Error: Failed to create custom domain${NC}"
+            exit 1
+        fi
+        echo -e "${GREEN}✓ Custom domain already exists${NC}"
+    else
+        echo -e "${GREEN}✓ Created custom domain${NC}"
+    fi
+
+    echo -e "${GREEN}✓ Target domain: $CUSTOM_DOMAIN${NC}"
+    echo ""
+
+    # Step 5d: Create API mapping
+    echo -e "${YELLOW}Creating API mapping...${NC}"
+
+    # Check if mapping already exists
+    EXISTING_MAPPING=$(aws apigatewayv2 get-api-mappings \
+        --domain-name "$FINAL_FQDN" \
+        --region "$REGION" \
+        --profile "$FINAL_AWS_PROFILE" \
+        --query "Items[0].ApiId" \
+        --output text 2>/dev/null || echo "")
+
+    if [ -z "$EXISTING_MAPPING" ] || [ "$EXISTING_MAPPING" == "None" ]; then
+        # Create mapping
+        aws apigatewayv2 create-api-mapping \
+            --domain-name "$FINAL_FQDN" \
+            --api-id "$API_ID" \
+            --stage "\$default" \
+            --region "$REGION" \
+            --profile "$FINAL_AWS_PROFILE" > /dev/null
+
+        echo -e "${GREEN}✓ Created API mapping${NC}"
+    else
+        echo -e "${GREEN}✓ API mapping already exists${NC}"
+    fi
+
+    echo ""
+
+    # Step 5e: Update Route 53 record to point to custom domain
+    echo -e "${YELLOW}Updating Route 53 record to point to custom domain...${NC}"
+
+    # Extract API Gateway hosted zone ID for the region
+    declare -A APIGW_ZONES=(
+        [us-east-1]="Z1D633PJN98FT9"
+        [us-east-2]="Z2FDTNDATAQYW2"
+        [us-west-1]="Z2MUQ32089INYE"
+        [us-west-2]="Z1H1FL5HABSF5"
+        [eu-west-1]="ZLY8HYME6SFDD"
+        [eu-central-1]="ZKCCQXN69G81H"
+        [ap-southeast-1]="ZL327KTPW47FFT"
+        [ap-southeast-2]="Z2W01FF0C6A6B1"
+        [ap-northeast-1]="Z1YSHQZHG15Z27"
+    )
+
+    APIGW_ZONE_ID=${APIGW_ZONES[$REGION]}
+    if [ -z "$APIGW_ZONE_ID" ]; then
+        echo -e "${RED}❌ Error: Unknown region: $REGION${NC}"
+        echo "Supported regions: ${!APIGW_ZONES[@]}"
+        exit 1
+    fi
+
+    aws route53 change-resource-record-sets \
+        --hosted-zone-id "$ZONE_ID" \
+        --profile "$FINAL_AWS_PROFILE" \
+        --change-batch "{
+            \"Changes\": [{
+                \"Action\": \"UPSERT\",
+                \"ResourceRecordSet\": {
+                    \"Name\": \"$FINAL_FQDN\",
+                    \"Type\": \"A\",
+                    \"AliasTarget\": {
+                        \"HostedZoneId\": \"$APIGW_ZONE_ID\",
+                        \"DNSName\": \"$CUSTOM_DOMAIN\",
+                        \"EvaluateTargetHealth\": false
+                    }
+                }
+            }]
+        }" > /dev/null
+
+    echo -e "${GREEN}✓ Updated Route 53 record with alias to custom domain${NC}"
     echo ""
 fi
 
@@ -506,15 +786,25 @@ echo -e "${GREEN}Deployment Details:${NC}"
 echo "  Application: $DASHBOARD_NAME"
 echo "  Lambda Function: $LAMBDA_FUNCTION_NAME"
 echo "  API Gateway: $API_ID"
-if [ "$NO_DNS" = false ]; then
+echo "  Region: $REGION"
+if [ -n "$FINAL_FQDN" ]; then
+    echo "  ACM Certificate: $CERT_ARN"
     echo "  API Endpoint: https://${API_ENDPOINT}"
     echo "  Custom Domain: https://${FINAL_FQDN}"
-    echo "  Region: $REGION"
+    echo "  Custom Domain Target: $CUSTOM_DOMAIN"
     echo ""
-    echo -e "${YELLOW}Note: DNS propagation may take a few minutes${NC}"
+    echo -e "${YELLOW}⏳ DNS Propagation${NC}"
+    echo "  DNS changes may take 5-15 minutes to propagate globally"
+    echo "  You can check status with:"
+    echo "    nslookup $FINAL_FQDN"
+    echo "    dig $FINAL_FQDN"
+    echo ""
+    echo -e "${YELLOW}🧪 Testing${NC}"
+    echo "  Once DNS propagates, test with:"
+    echo "    curl -I https://$FINAL_FQDN/"
+    echo "    Or open https://$FINAL_FQDN in your browser"
 else
     echo "  Public Endpoint: https://${API_ENDPOINT}"
-    echo "  Region: $REGION"
     echo ""
     echo -e "${YELLOW}Your dashboard is now publicly accessible at:${NC}"
     echo -e "${BLUE}https://${API_ENDPOINT}${NC}"
