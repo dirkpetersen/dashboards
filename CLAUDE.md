@@ -98,6 +98,33 @@ AWS_PROFILE=deploy-admin ./setup-lambda.sh bedrock-usage
 AWS_PROFILE=deploy-admin ./remove-lambda.sh bedrock-usage app.example.com
 ```
 
+#### Lambda Deployment Settings Preservation
+
+The Lambda deployment script automatically preserves configuration settings between redeployments using local metadata files. This ensures that access control and domain settings persist across code updates.
+
+**How it works:**
+1. After each deployment, settings are saved to `~/.lambda-deployments/{function-name}.metadata`
+2. On the next redeployment, if a flag is not provided on the command line, the previous value is used
+3. Settings are preserved per function name across different AWS profiles/accounts
+
+**Example workflow:**
+```bash
+# First deployment with settings
+./setup-lambda.sh bedrock-usage --profile prod --subnets-only 10.0.0.0/8 --fqdn bedrock.example.com
+
+# Later deployment: Update code without repeating settings
+./setup-lambda.sh bedrock-usage --profile prod
+# Output shows: ✓ Subnets: 10.0.0.0/8
+# Output shows: ✓ FQDN: bedrock.example.com
+```
+
+**Implementation details:**
+- Flags `FQDN_PROVIDED` and `SUBNETS_ONLY_PROVIDED` track explicit command-line arguments
+- Metadata is loaded early in the script before configuration output
+- Configuration precedence: explicit args > previous settings > empty/default
+- Metadata file format: Simple bash variables (`SUBNETS_ONLY="..."`, `FQDN="..."`)
+- This approach works with comma-separated values (unlike Lambda environment variables which truncate at commas)
+
 ## Configuration
 
 Configuration uses environment variables with a **hierarchy**:

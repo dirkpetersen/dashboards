@@ -209,6 +209,33 @@ The script will:
 
 Your dashboard will be available at `https://bedrock.example.com`
 
+#### Settings Preservation
+
+Deployment settings are automatically preserved between redeployments:
+
+- When you redeploy **without** `--subnets-only`, the previous subnet restrictions are preserved
+- When you redeploy **without** `--fqdn`, the previous domain configuration is preserved
+- Settings are stored locally in `~/.lambda-deployments/{function-name}.metadata` for each deployment
+
+This allows safe redeployment updates without losing your access control or domain configuration:
+
+```bash
+# First deployment with settings
+./setup-lambda.sh bedrock-usage \
+  --profile prod \
+  --subnets-only 10.0.0.0/8 \
+  --fqdn bedrock.example.com
+
+# Later: Update function code without repeating settings
+./setup-lambda.sh bedrock-usage --profile prod
+# Subnets and domain are automatically preserved from previous deployment
+```
+
+**How it works:**
+- Settings are saved to `~/.lambda-deployments/bedrock-usage-api.metadata` after each deployment
+- On redeployment, if a flag is not provided on the command line, the previous value is used
+- To disable a setting (e.g., remove subnet restrictions), explicitly pass an empty value or modify the metadata file
+
 #### Advanced: Cross-Account Deployments
 
 For deployments where your main AWS profile lacks IAM permissions to create Lambda roles:
