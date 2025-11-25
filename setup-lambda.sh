@@ -557,10 +557,10 @@ fi
 echo -e "${YELLOW}Updating Lambda environment variables...${NC}"
 ENV_VARS="{}"
 if [ -n "$FINAL_SUBNETS_ONLY" ]; then
-    ENV_VARS=$(echo "$ENV_VARS" | jq --arg val "$FINAL_SUBNETS_ONLY" '.SUBNETS_ONLY = $val')
+    ENV_VARS=$(echo "$ENV_VARS" | jq -c --arg val "$FINAL_SUBNETS_ONLY" '.SUBNETS_ONLY = $val')
 fi
 if [ -n "$FINAL_FQDN" ]; then
-    ENV_VARS=$(echo "$ENV_VARS" | jq --arg val "$FINAL_FQDN" '.FQDN = $val')
+    ENV_VARS=$(echo "$ENV_VARS" | jq -c --arg val "$FINAL_FQDN" '.FQDN = $val')
 fi
 
 if [ "$ENV_VARS" != "{}" ]; then
