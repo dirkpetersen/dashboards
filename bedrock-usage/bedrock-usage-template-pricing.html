@@ -254,7 +254,7 @@
                 {% for model in pricing_data %}
                 <tr data-vendor="{{ model.vendor.lower() }}" data-input="{{ model.input_price_raw }}" data-output="{{ model.output_price_raw }}" class="{% if model['input_price_raw']|float > 5 %}expensive{% elif model['input_price_raw']|float < 0.5 %}cheap{% endif %}">
                     <td>
-                        <span class="vendor-badge vendor-{{ model.vendor.lower() }}">{{ model.vendor }}</span>
+                        <span class="vendor-badge vendor-{{ model.vendor.lower() }}">{{ model.vendor_icon }} {{ model.vendor }}</span>
                     </td>
                     <td class="model-id">{{ model.model_id }}</td>
                     <td class="price price-output">${{ model.output_price }}</td>

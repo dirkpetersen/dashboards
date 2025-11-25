@@ -1186,25 +1186,48 @@ def pricing_page():
     access_check = check_subnet_access()
     if access_check is not True:
         return access_check
+
+    # Vendor icons mapping
+    vendor_icons = {
+        'anthropic': '🤖',
+        'openai': '🔶',
+        'deepseek': '🌙',
+        'qwen': '🤖',
+        'amazon': '🔶',
+        'ai21': '📚',
+        'cohere': '🌊',
+        'meta': '👍'
+    }
+
     # Extract vendor and model info from pricing dictionary
     pricing_data = []
     for model_id, prices in BEDROCK_PRICING.items():
         if model_id == 'default':
             continue
 
+        # Strip region prefix (e.g., "global.", "us.", "eu.", "ap.")
+        display_model_id = model_id
+        if model_id.startswith(('global.', 'us.', 'eu.', 'ap.')):
+            display_model_id = model_id.split('.', 1)[1]
+
         # Extract vendor from model ID
-        if '.' in model_id:
-            vendor = model_id.split('.')[0].title()
+        if '.' in display_model_id:
+            vendor_raw = display_model_id.split('.')[0].lower()
         else:
-            vendor = 'Unknown'
+            vendor_raw = 'unknown'
+
+        # Get vendor display name and icon
+        vendor_display = vendor_raw.title()
+        vendor_icon = vendor_icons.get(vendor_raw, '📦')
 
         input_price = prices['input']
         output_price = prices['output']
         total_price = input_price + output_price
 
         pricing_data.append({
-            'vendor': vendor,
-            'model_id': model_id,
+            'vendor': vendor_display,
+            'vendor_icon': vendor_icon,
+            'model_id': display_model_id,
             'input_price': format_price(input_price),
             'output_price': format_price(output_price),
             'total_price': format_price(total_price),
