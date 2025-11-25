@@ -20,6 +20,8 @@ IAM_PROFILE=""
 FQDN=""
 SUBNETS_ONLY=""
 PROFILE_PROVIDED=false
+FQDN_PROVIDED=false
+SUBNETS_ONLY_PROVIDED=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -57,10 +59,12 @@ while [[ $# -gt 0 ]]; do
             ;;
         --fqdn)
             FQDN="$2"
+            FQDN_PROVIDED=true
             shift 2
             ;;
         --subnets-only)
             SUBNETS_ONLY="$2"
+            SUBNETS_ONLY_PROVIDED=true
             shift 2
             ;;
         *)
@@ -101,6 +105,45 @@ fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DASHBOARD_DIR="$SCRIPT_DIR/$DASHBOARD_NAME"
+LAMBDA_FUNCTION_NAME="${DASHBOARD_NAME}-api"
+
+# Load previous deployment metadata for settings preservation
+# This must happen before any configuration output
+METADATA_FILE="$HOME/.lambda-deployments/$LAMBDA_FUNCTION_NAME.metadata"
+if [ -f "$METADATA_FILE" ]; then
+    # Source the metadata file to get previous deployment settings
+    source "$METADATA_FILE" 2>/dev/null || true
+    # Variables SUBNETS_ONLY and FQDN are now set (may be empty)
+fi
+
+# Determine final configuration values with proper precedence:
+# 1. Command-line arguments (if provided)
+# 2. Previous deployment settings (if not provided on command line)
+# 3. Empty (if neither provided)
+
+# Set final subnet restrictions
+if [ "$SUBNETS_ONLY_PROVIDED" = true ]; then
+    # Command line explicitly provided (could be empty to disable)
+    FINAL_SUBNETS_ONLY="$SUBNETS_ONLY"
+elif [ -n "$SUBNETS_ONLY" ]; then
+    # Loaded from metadata file (previous deployment)
+    FINAL_SUBNETS_ONLY="$SUBNETS_ONLY"
+else
+    # No previous setting and not provided on command line
+    FINAL_SUBNETS_ONLY=""
+fi
+
+# Set final FQDN
+if [ "$FQDN_PROVIDED" = true ]; then
+    # Command line explicitly provided (could be empty)
+    FINAL_FQDN="$FQDN"
+elif [ -n "$FQDN" ]; then
+    # Loaded from metadata file (previous deployment)
+    FINAL_FQDN="$FQDN"
+else
+    # No previous setting and not provided on command line
+    FINAL_FQDN=""
+fi
 
 # Validate dashboard directory exists
 if [ ! -d "$DASHBOARD_DIR" ]; then
@@ -183,14 +226,14 @@ echo -e "${YELLOW}════════════════════�
 echo ""
 
 # If command-line args were provided, use them directly
-if [ -n "$FQDN" ] || [ -n "$SUBNETS_ONLY" ] || [ "$PROFILE_PROVIDED" = true ]; then
+if [ "$FQDN_PROVIDED" = true ] || [ "$SUBNETS_ONLY_PROVIDED" = true ] || [ "$PROFILE_PROVIDED" = true ]; then
     # Command-line arguments were provided, skip interactive prompts
     echo -e "${GREEN}Using command-line arguments (non-interactive mode)${NC}"
     echo ""
 
     FINAL_AWS_PROFILE="$AWS_PROFILE"
-    FINAL_SUBNETS_ONLY="$SUBNETS_ONLY"
-    FINAL_FQDN="$FQDN"
+    # Note: FINAL_SUBNETS_ONLY and FINAL_FQDN are already set by the preservation logic above
+    # Just use them as-is for non-interactive mode
 else
     # Interactive mode: prompt for configuration
     echo -e "${BLUE}Global Settings (apply to all dashboards):${NC}"
@@ -302,31 +345,7 @@ ENVEOF
 
 # Create config file with deployment settings
 # Note: AWS_PROFILE is NOT used in Lambda - Lambda uses IAM roles instead
-
-# Try to get existing config from Lambda function environment if not explicitly provided
-EXISTING_SUBNETS_ONLY=""
-EXISTING_FQDN=""
-
-if aws lambda get-function --profile "$FINAL_AWS_PROFILE" --function-name "$LAMBDA_FUNCTION_NAME" &>/dev/null; then
-    # Function exists, try to get current environment variables
-    EXISTING_ENV=$(aws lambda get-function-configuration --profile "$FINAL_AWS_PROFILE" \
-        --function-name "$LAMBDA_FUNCTION_NAME" \
-        --query 'Environment.Variables' \
-        --output json 2>/dev/null || echo "{}")
-
-    EXISTING_SUBNETS_ONLY=$(echo "$EXISTING_ENV" | jq -r '.SUBNETS_ONLY // empty' 2>/dev/null || echo "")
-    EXISTING_FQDN=$(echo "$EXISTING_ENV" | jq -r '.FQDN // empty' 2>/dev/null || echo "")
-fi
-
-# Use provided values, or fall back to existing values, or use current FINAL_* values
-# This preserves previous settings if not explicitly overridden on command line
-if [ -z "$SUBNETS_ONLY" ] && [ -n "$EXISTING_SUBNETS_ONLY" ]; then
-    FINAL_SUBNETS_ONLY="$EXISTING_SUBNETS_ONLY"
-fi
-
-if [ -z "$FQDN" ] && [ -n "$EXISTING_FQDN" ]; then
-    FINAL_FQDN="$EXISTING_FQDN"
-fi
+# Note: FINAL_SUBNETS_ONLY and FINAL_FQDN are already determined by preservation logic
 
 cat > "$BUILD_DIR/config.json" << EOF
 {
@@ -552,31 +571,18 @@ else
     sleep 2
 fi
 
-# Update Lambda environment variables to match config.json (for retrieval during next deployment)
-# This allows the preservation logic to retrieve previous settings
-if [ -n "$FINAL_SUBNETS_ONLY" ] || [ -n "$FINAL_FQDN" ]; then
-    echo -e "${YELLOW}Updating Lambda environment variables...${NC}"
+# Store deployment metadata for retrieval on next deployment
+# Save to a local file that will be checked for preservation logic
+METADATA_FILE="$HOME/.lambda-deployments/$LAMBDA_FUNCTION_NAME.metadata"
+mkdir -p "$(dirname "$METADATA_FILE")"
 
-    # Build environment variables in AWS CLI format: "Key1=Value1,Key2=Value2"
-    # Only include non-empty values
-    ENV_VARS_AWS=""
-    if [ -n "$FINAL_SUBNETS_ONLY" ]; then
-        ENV_VARS_AWS="SUBNETS_ONLY=$FINAL_SUBNETS_ONLY"
-    fi
-    if [ -n "$FINAL_FQDN" ]; then
-        if [ -n "$ENV_VARS_AWS" ]; then
-            ENV_VARS_AWS="$ENV_VARS_AWS,FQDN=$FINAL_FQDN"
-        else
-            ENV_VARS_AWS="FQDN=$FINAL_FQDN"
-        fi
-    fi
+cat > "$METADATA_FILE" << METAEOF
+# Lambda deployment metadata - auto-generated for setting preservation
+SUBNETS_ONLY="$FINAL_SUBNETS_ONLY"
+FQDN="$FINAL_FQDN"
+METAEOF
 
-    if [ -n "$ENV_VARS_AWS" ]; then
-        aws lambda update-function-configuration --profile "$FINAL_AWS_PROFILE" \
-            --function-name "$LAMBDA_FUNCTION_NAME" \
-            --environment "Variables={$ENV_VARS_AWS}" > /dev/null 2>&1 || true
-    fi
-fi
+echo -e "${GREEN}✓ Saved deployment metadata${NC}"
 
 echo -e "${GREEN}✓ Lambda function ready: $LAMBDA_FUNCTION_NAME${NC}"
 echo ""
