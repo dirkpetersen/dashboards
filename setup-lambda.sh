@@ -19,6 +19,7 @@ AWS_PROFILE="${AWS_PROFILE:-default}"
 IAM_PROFILE=""
 FQDN=""
 SUBNETS_ONLY=""
+PROFILE_PROVIDED=false
 
 while [[ $# -gt 0 ]]; do
     case $1 in
@@ -47,6 +48,7 @@ while [[ $# -gt 0 ]]; do
             ;;
         --profile)
             AWS_PROFILE="$2"
+            PROFILE_PROVIDED=true
             shift 2
             ;;
         --iam-profile)
@@ -181,7 +183,7 @@ echo -e "${YELLOW}════════════════════�
 echo ""
 
 # If command-line args were provided, use them directly
-if [ -n "$FQDN" ] || [ -n "$SUBNETS_ONLY" ] || [ "$AWS_PROFILE" != "default" ]; then
+if [ -n "$FQDN" ] || [ -n "$SUBNETS_ONLY" ] || [ "$PROFILE_PROVIDED" = true ]; then
     # Command-line arguments were provided, skip interactive prompts
     echo -e "${GREEN}Using command-line arguments (non-interactive mode)${NC}"
     echo ""
