@@ -552,6 +552,23 @@ else
     sleep 2
 fi
 
+# Update Lambda environment variables to match config.json (for retrieval during next deployment)
+# This allows the preservation logic to retrieve previous settings
+echo -e "${YELLOW}Updating Lambda environment variables...${NC}"
+ENV_VARS="{}"
+if [ -n "$FINAL_SUBNETS_ONLY" ]; then
+    ENV_VARS=$(echo "$ENV_VARS" | jq --arg val "$FINAL_SUBNETS_ONLY" '.SUBNETS_ONLY = $val')
+fi
+if [ -n "$FINAL_FQDN" ]; then
+    ENV_VARS=$(echo "$ENV_VARS" | jq --arg val "$FINAL_FQDN" '.FQDN = $val')
+fi
+
+if [ "$ENV_VARS" != "{}" ]; then
+    aws lambda update-function-configuration --profile "$FINAL_AWS_PROFILE" \
+        --function-name "$LAMBDA_FUNCTION_NAME" \
+        --environment "Variables=$ENV_VARS" > /dev/null 2>&1 || true
+fi
+
 echo -e "${GREEN}✓ Lambda function ready: $LAMBDA_FUNCTION_NAME${NC}"
 echo ""
 
