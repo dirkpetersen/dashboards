@@ -300,6 +300,32 @@ ENVEOF
 
 # Create config file with deployment settings
 # Note: AWS_PROFILE is NOT used in Lambda - Lambda uses IAM roles instead
+
+# Try to get existing config from Lambda function environment if not explicitly provided
+EXISTING_SUBNETS_ONLY=""
+EXISTING_FQDN=""
+
+if aws lambda get-function --profile "$FINAL_AWS_PROFILE" --function-name "$LAMBDA_FUNCTION_NAME" &>/dev/null; then
+    # Function exists, try to get current environment variables
+    EXISTING_ENV=$(aws lambda get-function-configuration --profile "$FINAL_AWS_PROFILE" \
+        --function-name "$LAMBDA_FUNCTION_NAME" \
+        --query 'Environment.Variables' \
+        --output json 2>/dev/null || echo "{}")
+
+    EXISTING_SUBNETS_ONLY=$(echo "$EXISTING_ENV" | jq -r '.SUBNETS_ONLY // empty' 2>/dev/null || echo "")
+    EXISTING_FQDN=$(echo "$EXISTING_ENV" | jq -r '.FQDN // empty' 2>/dev/null || echo "")
+fi
+
+# Use provided values, or fall back to existing values, or use current FINAL_* values
+# This preserves previous settings if not explicitly overridden on command line
+if [ -z "$SUBNETS_ONLY" ] && [ -n "$EXISTING_SUBNETS_ONLY" ]; then
+    FINAL_SUBNETS_ONLY="$EXISTING_SUBNETS_ONLY"
+fi
+
+if [ -z "$FQDN" ] && [ -n "$EXISTING_FQDN" ]; then
+    FINAL_FQDN="$EXISTING_FQDN"
+fi
+
 cat > "$BUILD_DIR/config.json" << EOF
 {
   "subnets_only": "$FINAL_SUBNETS_ONLY",
