@@ -427,9 +427,9 @@
                 userAverageCosts[user] = costCount > 0 ? totalCost / sortedDates.length : 0;
             });
 
-            // Filter users: keep only those with average daily cost >= $1
+            // Filter users: keep only those with average daily cost >= $0.10
             const filteredUsers = Object.keys(userModelDailyCosts)
-                .filter(user => userAverageCosts[user] >= 1.0)
+                .filter(user => userAverageCosts[user] >= 0.10)
                 .sort();
 
             // Create color palette
@@ -493,7 +493,7 @@
             });
 
             // Create the daily cost line chart
-            createDailyLineChart('userDailyCostChart', 'Daily Cost by User and Model (users > $1/day)',
+            createDailyLineChart('userDailyCostChart', 'Daily Cost by User and Model (users > $0.10/day)',
                 sortedDates,
                 datasets);
 
