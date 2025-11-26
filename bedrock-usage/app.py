@@ -1094,6 +1094,35 @@ def usage_api():
     else:
         data['model_display_names'] = {}
 
+    # Filter data for graphs: only include models with >= 25 invocations
+    # Tables will use the full unfiltered data
+    min_invocations_for_graphs = 25
+    model_invocations = data.get('model_invocations', {})
+
+    # Create filtered versions for graphs
+    filtered_models = {model for model, count in model_invocations.items() if count >= min_invocations_for_graphs}
+
+    # Add filtered data for graphs (with _for_graphs suffix)
+    data['model_costs_for_graphs'] = {m: v for m, v in data.get('model_costs', {}).items() if m in filtered_models}
+    data['model_invocations_for_graphs'] = {m: v for m, v in model_invocations.items() if m in filtered_models}
+    data['model_tokens_for_graphs'] = {m: v for m, v in data.get('model_tokens', {}).items() if m in filtered_models}
+    data['model_usage_for_graphs'] = {m: v for m, v in data.get('model_usage', {}).items() if m in filtered_models}
+    data['model_display_names_for_graphs'] = {m: v for m, v in data.get('model_display_names', {}).items() if m in filtered_models}
+
+    # Also filter user_model_costs and user_model_daily_costs for graphs
+    data['user_model_costs_for_graphs'] = {
+        user: {model: cost for model, cost in models.items() if model in filtered_models}
+        for user, models in data.get('user_model_costs', {}).items()
+    }
+
+    data['user_model_daily_costs_for_graphs'] = {
+        user: {
+            model: daily_costs
+            for model, daily_costs in models.items() if model in filtered_models
+        }
+        for user, models in data.get('user_model_daily_costs', {}).items()
+    }
+
     return jsonify(data)
 
 @app.route('/api/cost-matrix')

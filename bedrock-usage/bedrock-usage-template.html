@@ -390,8 +390,9 @@
 
         function renderCostCharts(data) {
             // Build daily cost chart with dates on X-axis and user+model lines
-            const userModelDailyCosts = data.user_model_daily_costs || {};
-            const modelDisplayNames = data.model_display_names || {};
+            // Use filtered data for graphs (only models with >= 25 invocations)
+            const userModelDailyCosts = data.user_model_daily_costs_for_graphs || {};
+            const modelDisplayNames = data.model_display_names_for_graphs || {};
             const dailyCosts = data.daily_costs || {};
 
             if (Object.keys(userModelDailyCosts).length === 0) {
@@ -501,7 +502,8 @@
         }
 
         function renderCostDistributionCharts(data) {
-            const userModelCosts = data.user_model_costs || {};
+            // Use filtered data for graphs (only models with >= 25 invocations)
+            const userModelCosts = data.user_model_costs_for_graphs || {};
             if (Object.keys(userModelCosts).length === 0) return;
 
             // Build matrix for distribution charts
@@ -511,7 +513,7 @@
                 Object.keys(costs).forEach(m => allModels.add(m));
             });
             const models = Array.from(allModels).sort();
-            const modelDisplayNames = data.model_display_names || {};
+            const modelDisplayNames = data.model_display_names_for_graphs || {};
 
             // Create transposed matrix (models as rows, users as columns)
             const transposedMatrix = [];
@@ -682,9 +684,10 @@
                 users.map(u => userTokens[u].output));
 
             // Tokens by Model (Stacked) - with display names
-            const modelTokens = data.model_tokens || {};
+            // Use filtered data for graphs (only models with >= 25 invocations)
+            const modelTokens = data.model_tokens_for_graphs || {};
             const models = Object.keys(modelTokens);
-            const modelDisplayNames = data.model_display_names || {};
+            const modelDisplayNames = data.model_display_names_for_graphs || {};
             const modelLabels = models.map(m => modelDisplayNames[m] || m);
             createStackedBarChart('tokensByModelChart', 'Token Usage by Model',
                 modelLabels,
@@ -700,8 +703,9 @@
                 '#43e97b', false);
 
             // Invocations by Model - with display names
-            const modelUsage = data.model_usage || {};
-            const modelDisplayNames = data.model_display_names || {};
+            // Use filtered data for graphs (only models with >= 25 invocations)
+            const modelUsage = data.model_usage_for_graphs || {};
+            const modelDisplayNames = data.model_display_names_for_graphs || {};
             const modelLabels = Object.keys(modelUsage).map(m => modelDisplayNames[m] || m);
             createDoughnutChart('invocationsByModelChart', 'Invocations by Model',
                 modelLabels,
