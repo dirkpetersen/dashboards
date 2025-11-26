@@ -76,15 +76,21 @@ BEDROCK_PRICING = {
     'anthropic.claude-sonnet-4-5-20250929-v1:0[1m]': {'input': 6.6, 'output': 24.75},  # Extended thinking
     'anthropic.claude-haiku-4-5-20251001-v1:0': {'input': 1.1, 'output': 5.5},
 
+    # Claude 3.7 models
+    'anthropic.claude-3-7-sonnet-20250219-v1:0': {'input': 3.0, 'output': 15.0},
+
     # Claude 3.5 models
     'anthropic.claude-sonnet-4-20250514-v1:0': {'input': 3.0, 'output': 15.0},
     'anthropic.claude-3-5-sonnet-20240620-v1:0': {'input': 3.0, 'output': 15.0},
+    'anthropic.claude-3-5-sonnet-20241022-v2:0': {'input': 3.0, 'output': 15.0},
 
     # Claude 3.5 Haiku
     'anthropic.claude-3-5-haiku-20241022-v1:0': {'input': 1.0, 'output': 5.0},
 
     # Claude 3 models - Cross-Region Inference
     'anthropic.claude-3-haiku-20240307-v1:0': {'input': 0.25, 'output': 1.25},
+    'anthropic.claude-3-opus-20240229-v1:0': {'input': 15.0, 'output': 75.0},
+    'anthropic.claude-3-sonnet-20240229-v1:0': {'input': 3.0, 'output': 15.0},
 
     # Claude 4.x models - Cross-Region Inference
     'anthropic.claude-opus-4-20250514-v1:0': {'input': 15.0, 'output': 75.0},
@@ -99,7 +105,9 @@ BEDROCK_PRICING = {
 
     # DeepSeek models - Cross-Region Inference
     'deepseek.deepseek-r1': {'input': 1.35, 'output': 5.4},
+    'deepseek.r1-v1:0': {'input': 1.35, 'output': 5.4},
     'deepseek.deepseek-v3.1': {'input': 0.58, 'output': 1.68},
+    'deepseek.v3-v1:0': {'input': 0.58, 'output': 1.68},
 
     # Qwen models - Cross-Region Inference
     'qwen.qwen3-coder-30b-a3b': {'input': 0.15, 'output': 0.6},
@@ -113,39 +121,66 @@ BEDROCK_PRICING = {
     'amazon.nova-pro-v1:0': {'input': 0.8, 'output': 0.2},
     'amazon.nova-premier-v1:0': {'input': 2.5, 'output': 0.625},
 
+    # Amazon Titan models
+    'amazon.titan-text-express-v1': {'input': 0.2, 'output': 0.6},
+    'amazon.titan-text-lite-v1': {'input': 0.15, 'output': 0.2},
+    'amazon.titan-tg1-large': {'input': 0.8, 'output': 2.4},
+
+    # Cohere models
+    'cohere.command-r-v1:0': {'input': 0.5, 'output': 1.5},
+    'cohere.command-r-plus-v1:0': {'input': 3.0, 'output': 15.0},
+
+    # Meta Llama models - Cross-Region Inference
+    'meta.llama3-70b-instruct-v1:0': {'input': 0.99, 'output': 0.99},
+    'meta.llama3-8b-instruct-v1:0': {'input': 0.3, 'output': 0.6},
+    'meta.llama3-1-405b-instruct-v1:0': {'input': 2.65, 'output': 2.65},
+    'meta.llama3-1-70b-instruct-v1:0': {'input': 0.99, 'output': 0.99},
+    'meta.llama3-1-8b-instruct-v1:0': {'input': 0.22, 'output': 0.22},
+    'meta.llama3-2-1b-instruct-v1:0': {'input': 0.1, 'output': 0.1},
+    'meta.llama3-2-3b-instruct-v1:0': {'input': 0.15, 'output': 0.15},
+    'meta.llama3-2-11b-instruct-v1:0': {'input': 0.35, 'output': 0.35},
+    'meta.llama3-2-90b-instruct-v1:0': {'input': 1.2, 'output': 1.2},
+    'meta.llama3-3-70b-instruct-v1:0': {'input': 0.99, 'output': 0.99},
+    'meta.llama4-maverick-17b-instruct-v1:0': {'input': 0.4, 'output': 0.4},
+    'meta.llama4-scout-17b-instruct-v1:0': {'input': 0.4, 'output': 0.4},
+
+    # Mistral models - Cross-Region Inference
+    'mistral.mistral-7b-instruct-v0:2': {'input': 0.15, 'output': 0.2},
+    'mistral.mixtral-8x7b-instruct-v0:1': {'input': 0.45, 'output': 0.7},
+    'mistral.mistral-large-2402-v1:0': {'input': 4.0, 'output': 12.0},
+    'mistral.mistral-large-2407-v1:0': {'input': 3.0, 'output': 9.0},
+    'mistral.pixtral-large-2502-v1:0': {'input': 3.0, 'output': 9.0},
+
+    # Writer models
+    'writer.palmyra-x4-v1:0': {'input': 0.375, 'output': 1.125},
+    'writer.palmyra-x5-v1:0': {'input': 2.5, 'output': 7.5},
+
+    # TwelveLabs models
+    'twelvelabs.pegasus-1-2-v1:0': {'input': 5.0, 'output': 15.0},
+
+    # Stability AI models (image generation - per image pricing converted to token equivalent)
+    'stability.stable-image-inpaint-v1:0': {'input': 0.04, 'output': 0.04},  # $0.04/image
+
     # Default pricing for unknown models
     'default': {'input': 0.0, 'output': 0.0}
 }
 
 INACTIVE_BEDROCK_PRICING = {
-    # Claude 3.5 models - Cross-Region Inference
-    'anthropic.claude-3-5-sonnet-20241022-v2:0': {'input': 3.0, 'output': 15.0},
-
-    # Claude 3 models - Cross-Region Inference
-    'anthropic.claude-3-opus-20240229-v1:0': {'input': 15.0, 'output': 75.0},
-    'anthropic.claude-3-sonnet-20240229-v1:0': {'input': 3.0, 'output': 15.0},
-
-    # Claude 2 models
+    # Claude 2 models (deprecated)
     'anthropic.claude-v2:1': {'input': 8.0, 'output': 24.0},
     'anthropic.claude-v2': {'input': 8.0, 'output': 24.0},
     'anthropic.claude-instant-v1': {'input': 0.8, 'output': 2.4},
 
-    # Amazon Titan models
-    'amazon.titan-text-express-v1': {'input': 0.2, 'output': 0.6},
-    'amazon.titan-text-lite-v1': {'input': 0.15, 'output': 0.2},
+    # Amazon Titan models (deprecated)
     'amazon.titan-embed-text-v1': {'input': 0.1, 'output': 0.0},
 
-    # AI21 models
+    # AI21 models (deprecated)
     'ai21.j2-ultra-v1': {'input': 18.8, 'output': 18.8},
     'ai21.j2-mid-v1': {'input': 12.5, 'output': 12.5},
 
-    # Cohere models
+    # Cohere models (deprecated)
     'cohere.command-text-v14': {'input': 1.5, 'output': 2.0},
     'cohere.command-light-text-v14': {'input': 0.3, 'output': 0.6},
-
-    # Meta Llama models
-    'meta.llama3-70b-instruct-v1:0': {'input': 0.99, 'output': 0.99},
-    'meta.llama3-8b-instruct-v1:0': {'input': 0.3, 'output': 0.6},
 
 }
 
