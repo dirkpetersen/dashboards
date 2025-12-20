@@ -1307,8 +1307,10 @@ def pricing_page():
 
 if __name__ == '__main__':
     # Parse command-line arguments
+    # Port priority: command-line arg > PORT env var > default 5000
+    default_port = int(os.environ.get('PORT', 5000))
     parser = argparse.ArgumentParser(description='AWS Bedrock Usage Dashboard')
-    parser.add_argument('--port', type=int, default=5000, help='Port to run the server on (default: 5000)')
+    parser.add_argument('--port', type=int, default=default_port, help=f'Port to run the server on (default: {default_port})')
     args = parser.parse_args()
 
     print("Starting Bedrock Usage Dashboard...")
