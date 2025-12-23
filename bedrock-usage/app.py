@@ -39,6 +39,34 @@ def get_config(variable_name, default=None):
     # Return default
     return default
 
+def parse_days_parameter(days_param):
+    """
+    Parse the days parameter, which can be a number or special value like 'mtd' or 'last-month'.
+
+    Returns:
+        tuple: (start_date, end_date) as datetime objects
+    """
+    end_date = datetime.now()
+
+    if days_param == 'mtd':
+        # Month to date: from first day of current month to today
+        start_date = end_date.replace(day=1)
+    elif days_param == 'last-month':
+        # Last month: from first day of last month to last day of last month
+        first_of_this_month = end_date.replace(day=1)
+        last_of_last_month = first_of_this_month - timedelta(days=1)
+        start_date = last_of_last_month.replace(day=1)
+        end_date = last_of_last_month
+    else:
+        # Numeric days: convert to start_date
+        try:
+            days = int(days_param)
+        except (ValueError, TypeError):
+            days = 7  # Default to 7 days
+        start_date = end_date - timedelta(days=days)
+
+    return start_date, end_date
+
 app = Flask(__name__)
 
 # Query cache to avoid repeated CloudWatch Logs Insights queries
@@ -46,8 +74,17 @@ _query_cache = {}
 _cache_ttl = 600  # 10 minutes cache TTL in seconds
 
 def _get_cache_key(days):
-    """Generate cache key based on days parameter"""
-    return f"bedrock_usage_{days}"
+    """Generate cache key based on days parameter (handles numeric and special values)"""
+    # Convert special values to consistent keys
+    if days == 'mtd':
+        cache_date = datetime.now().strftime('%Y-%m')
+        return f"bedrock_usage_mtd_{cache_date}"
+    elif days == 'last-month':
+        last_month = datetime.now() - timedelta(days=datetime.now().day)
+        cache_date = last_month.strftime('%Y-%m')
+        return f"bedrock_usage_last_month_{cache_date}"
+    else:
+        return f"bedrock_usage_{days}"
 
 def _get_cached_query_id(days):
     """Get cached query ID if still valid"""
@@ -839,13 +876,15 @@ def get_bedrock_usage(days=7):
     - 10-100x faster aggregation than filtering and processing in Python
     - Server-side aggregation of data
     - Better handling of large datasets
+
+    Args:
+        days: Can be a number (e.g., 7, 30, 90), 'mtd' for month-to-date, or 'last-month'
     """
     try:
         logs_client = boto3.client('logs')
 
-        # Calculate time range
-        end_time = datetime.now()
-        start_time = end_time - timedelta(days=days)
+        # Parse days parameter to get start and end times
+        start_time, end_time = parse_days_parameter(days)
 
         log_group_name = '/aws/bedrock/modelinvocations'
 

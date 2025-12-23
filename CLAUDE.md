@@ -53,19 +53,29 @@ pip install -r requirements.txt
 
 ```bash
 # Run bedrock-usage dashboard (default port 5000)
-.venv/bin/python bedrock-usage/app.py --port 5000
+.venv/bin/python bedrock-usage/app.py
 
-# Run on different port
+# Run on custom port (also read from PORT environment variable)
 .venv/bin/python bedrock-usage/app.py --port 8080
+
+# Run with PORT environment variable
+PORT=8080 .venv/bin/python bedrock-usage/app.py
 ```
 
 ### Testing
 
-Each dashboard has specific test procedures. See `bedrock-usage/CLAUDE.md` for testing the Bedrock dashboard.
+Each dashboard has specific test procedures. See `bedrock-usage/CLAUDE.md` for comprehensive testing procedures including manual testing and validation.
 
 ```bash
 # Example: Manual testing with curl
 curl -s http://localhost:5000/api/usage | python3 -m json.tool | head -20
+
+# Test specific date ranges
+curl -s "http://localhost:5000/api/usage?days=7" | python3 -m json.tool
+curl -s "http://localhost:5000/api/usage?days=30" | python3 -m json.tool
+
+# Time the API response
+time curl -s http://localhost:5000/api/usage > /dev/null
 ```
 
 ### Deployment
@@ -249,6 +259,36 @@ See `.env.default` for examples.
 - Python 3.7+
 - AWS credentials (via IAM role, ~/.aws/credentials, or environment variables)
 
+## Troubleshooting Common Issues
+
+### CloudWatch Logs Insights Query Timeouts
+If queries are timing out:
+1. Verify the `/aws/bedrock/modelinvocations` log group exists and contains recent data
+2. Check CloudWatch Logs directly: `aws logs describe-log-groups --profile bedrock`
+3. For large date ranges (30+ days), queries may take longer; consider breaking into smaller chunks
+4. Ensure IAM user has `logs:StartQuery` and `logs:GetQueryResults` permissions
+
+### Lambda Deployment Issues
+- **Certificate validation hanging**: Check Route 53 hosted zone exists and is in the same AWS account
+- **Settings not persisting**: Metadata file at `~/.lambda-deployments/{function-name}.metadata` may have stale data
+- **Access denied errors**: Verify IAM profile has permissions for Lambda, API Gateway, Route 53, and ACM
+
+### Port Already in Use
+```bash
+# Kill existing process
+pkill -f "python app.py"
+
+# Or use a different port
+.venv/bin/python bedrock-usage/app.py --port 8081
+```
+
+### Missing AWS Credentials
+Dashboards read credentials in this order:
+1. `AWS_PROFILE` environment variable or .env file
+2. `~/.aws/credentials` file
+3. IAM role (on EC2/Lambda/ECS)
+4. Environment variables: `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_DEFAULT_REGION`
+
 ## Development Notes
 
 ### Debugging Dashboard Applications
@@ -285,3 +325,49 @@ Dashboards may need AWS service permissions. Store setup scripts in the dashboar
 - `enable-{name}-logging.sh`: Configure log groups
 
 See `bedrock-usage/` for examples.
+
+### Flask Application Architecture
+
+Each dashboard Flask app (e.g., `bedrock-usage/app.py`) follows a consistent pattern:
+
+**Core components**:
+1. **Configuration loading**: `get_config()` function supports dashboard-specific environment variable overrides
+2. **Access control middleware**: `check_subnet_access()` validates CIDR restrictions from `SUBNETS_ONLY` variable
+3. **Data fetching**: Implements AWS service queries (CloudWatch Logs, Cost Explorer, etc.)
+4. **Route handlers**:
+   - Index route renders HTML dashboard
+   - API route returns JSON data for frontend
+   - Additional routes for specific features (pricing, matrix, etc.)
+5. **Caching**: Query results cached in memory with TTL to reduce AWS API calls
+
+**Common patterns**:
+- All apps run with `app.run(debug=True, host='0.0.0.0', port=args.port)`
+- HTML templates use Chart.js for visualizations
+- Query caching uses in-memory dict with timestamp-based TTL
+- Error handling returns JSON errors with descriptive messages
+
+**Modifying a dashboard**:
+- Changes to data fetching logic go in the data function (e.g., `get_bedrock_usage()`)
+- UI changes go in HTML templates
+- New routes follow existing pattern: render template or return JSON
+- Always validate input parameters (especially date ranges)
+
+### Query Performance Optimization
+
+CloudWatch Logs Insights provides 10-100x performance improvement over filter_log_events:
+
+```bash
+# Fast: Logs Insights server-side aggregation (seconds)
+aws logs start-query --log-group-name /aws/bedrock/modelinvocations \
+  --query-string 'stats count() by userIdentity.principalId, modelId' \
+  --start-time $(date -d '7 days ago' +%s) --end-time $(date +%s) --profile bedrock
+
+# Slow: Python-side aggregation (minutes for large datasets)
+# aws logs filter_log_events + for loops in Python
+```
+
+**Best practices**:
+1. Always use Logs Insights for aggregation queries
+2. Let CloudWatch handle grouping/counting when possible
+3. Cache results with reasonable TTL (10 minutes typical)
+4. Test queries directly in AWS CloudWatch console before implementing
