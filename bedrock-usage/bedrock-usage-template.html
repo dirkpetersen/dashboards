@@ -366,11 +366,12 @@
             const totalUsers = Object.keys(data.user_invocations).length;
             const totalModels = Object.keys(data.model_usage).length;
 
+            const costSource = data.cost_source || 'calculated';
             statsDiv.innerHTML = `
                 <div class="stat-card cost">
                     <h3>Total Cost</h3>
                     <div class="value">${formatCost(data.total_cost || 0)}</div>
-                    <div class="subtitle">${data.date_range}</div>
+                    <div class="subtitle">${data.date_range}${costSource === 'AWS Cost Explorer' ? ' (from AWS billing)' : ''}</div>
                 </div>
                 <div class="stat-card invocations">
                     <h3>Total Invocations</h3>

@@ -870,6 +870,109 @@ def normalize_username(raw_user):
     # Return the normalized user (identifiable but not in map)
     return user
 
+def get_cost_explorer_costs(start_time, end_time):
+    """
+    Fetch actual Bedrock costs from AWS Cost Explorer API.
+
+    Returns costs broken down by:
+    - Service (model) with daily granularity
+    - Total costs for the period
+
+    Args:
+        start_time: datetime object for start of period
+        end_time: datetime object for end of period
+
+    Returns:
+        dict with 'model_costs', 'daily_costs', 'model_daily_costs', 'total_cost'
+    """
+    try:
+        ce_client = boto3.client('ce')
+
+        # Format dates for Cost Explorer API (YYYY-MM-DD)
+        start_date = start_time.strftime('%Y-%m-%d')
+        # Cost Explorer end date is exclusive, so add 1 day
+        end_date = (end_time + timedelta(days=1)).strftime('%Y-%m-%d')
+
+        # Get daily costs by service for Bedrock-related services
+        response = ce_client.get_cost_and_usage(
+            TimePeriod={
+                'Start': start_date,
+                'End': end_date
+            },
+            Granularity='DAILY',
+            Metrics=['UnblendedCost'],
+            GroupBy=[
+                {'Type': 'DIMENSION', 'Key': 'SERVICE'}
+            ],
+            Filter={
+                'Or': [
+                    {'Dimensions': {'Key': 'SERVICE', 'Values': ['Amazon Bedrock']}},
+                    {'Dimensions': {'Key': 'SERVICE', 'MatchOptions': ['CONTAINS'], 'Values': ['Bedrock Edition']}}
+                ]
+            }
+        )
+
+        # Process results
+        model_costs = defaultdict(float)
+        daily_costs = defaultdict(float)
+        model_daily_costs = defaultdict(lambda: defaultdict(float))
+        total_cost = 0.0
+
+        # Map AWS service names to cleaner model names
+        service_to_model = {
+            'Amazon Bedrock': 'Amazon Bedrock (Other)',
+            'Claude Opus 4.5 (Amazon Bedrock Edition)': 'anthropic.claude-opus-4-5-20251101-v1:0',
+            'Claude Sonnet 4.5 (Amazon Bedrock Edition)': 'anthropic.claude-sonnet-4-5-20250929-v1:0',
+            'Claude Haiku 4.5 (Amazon Bedrock Edition)': 'anthropic.claude-haiku-4-5-20251001-v1:0',
+            'Claude Opus 4.1 (Amazon Bedrock Edition)': 'anthropic.claude-opus-4-1-20250805-v1:0',
+            'Claude Opus 4 (Amazon Bedrock Edition)': 'anthropic.claude-opus-4-20250514-v1:0',
+            'Claude Sonnet 4 (Amazon Bedrock Edition)': 'anthropic.claude-sonnet-4-20250514-v1:0',
+            'Claude 3.7 Sonnet (Amazon Bedrock Edition)': 'anthropic.claude-3-7-sonnet-20250219-v1:0',
+            'Claude 3.5 Sonnet (Amazon Bedrock Edition)': 'anthropic.claude-3-5-sonnet-20241022-v2:0',
+            'Claude 3.5 Haiku (Amazon Bedrock Edition)': 'anthropic.claude-3-5-haiku-20241022-v1:0',
+            'Claude 3 Opus (Amazon Bedrock Edition)': 'anthropic.claude-3-opus-20240229-v1:0',
+            'Claude 3 Sonnet (Amazon Bedrock Edition)': 'anthropic.claude-3-sonnet-20240229-v1:0',
+            'Claude 3 Haiku (Amazon Bedrock Edition)': 'anthropic.claude-3-haiku-20240307-v1:0',
+        }
+
+        for day_result in response.get('ResultsByTime', []):
+            date = day_result['TimePeriod']['Start']
+
+            for group in day_result.get('Groups', []):
+                service_name = group['Keys'][0]
+                cost = float(group['Metrics']['UnblendedCost']['Amount'])
+
+                if cost > 0:
+                    # Map service name to model ID (or use service name if not in map)
+                    model_id = service_to_model.get(service_name, service_name)
+
+                    model_costs[model_id] += cost
+                    daily_costs[date] += cost
+                    model_daily_costs[model_id][date] += cost
+                    total_cost += cost
+
+        return {
+            'model_costs': dict(model_costs),
+            'daily_costs': dict(sorted(daily_costs.items())),
+            'model_daily_costs': {m: dict(sorted(d.items())) for m, d in model_daily_costs.items()},
+            'total_cost': total_cost,
+            'source': 'cost_explorer'
+        }
+
+    except Exception as e:
+        error_msg = str(e)
+        if 'AccessDenied' in error_msg:
+            error_msg = f'Cost Explorer access denied. Required permission: ce:GetCostAndUsage. Error: {error_msg}'
+        return {
+            'error': f'Failed to fetch Cost Explorer data: {error_msg}',
+            'model_costs': {},
+            'daily_costs': {},
+            'model_daily_costs': {},
+            'total_cost': 0.0,
+            'source': 'cost_explorer'
+        }
+
+
 def get_bedrock_usage(days=7):
     """
     Fetch Bedrock usage data from CloudWatch Logs using Logs Insights queries.
@@ -974,28 +1077,24 @@ def _process_logs_insights_results(records, start_time, end_time):
     """
     Process aggregated results from CloudWatch Logs Insights query.
     Records are already aggregated by identity.arn, modelId, and date_day.
+
+    Note: This function tracks invocations and tokens from CloudWatch logs.
+    Actual costs are fetched separately from AWS Cost Explorer for accuracy.
     """
     # Initialize data structures
     user_invocations = defaultdict(int)
     daily_trend = defaultdict(int)
     model_usage = defaultdict(int)
 
-    # Token and cost tracking
+    # Token tracking (costs come from Cost Explorer, not calculated here)
     user_tokens = defaultdict(lambda: {'input': 0, 'output': 0})
-    user_costs = defaultdict(float)
     model_tokens = defaultdict(lambda: {'input': 0, 'output': 0})
-    model_costs = defaultdict(float)
     model_invocations = defaultdict(int)
-    daily_costs = defaultdict(float)
 
-    # Per-user daily cost tracking
-    user_daily_costs = defaultdict(lambda: defaultdict(float))
-
-    # Per-user per-model cost tracking (for cost matrix)
-    user_model_costs = defaultdict(lambda: defaultdict(float))
-
-    # Per-user per-model per-day cost tracking (for daily chart)
-    user_model_daily_costs = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
+    # Track user's share of invocations per model (for cost allocation)
+    user_model_invocations = defaultdict(lambda: defaultdict(int))
+    user_daily_invocations = defaultdict(lambda: defaultdict(int))
+    user_model_daily_invocations = defaultdict(lambda: defaultdict(lambda: defaultdict(int)))
 
     total_events = 0
 
@@ -1011,7 +1110,7 @@ def _process_logs_insights_results(records, start_time, end_time):
             # Extract fields - they're already strings from CloudWatch
             user_arn = fields.get('identity.arn', 'Unknown')
             model_id = fields.get('modelId', 'Unknown')
-            date_day = fields.get('date_day', 'Unknown')  # New field from datefloor()
+            date_day = fields.get('date_day', 'Unknown')
 
             # Skip records with Unknown user or model
             if user_arn == 'Unknown' or model_id == 'Unknown':
@@ -1044,40 +1143,22 @@ def _process_logs_insights_results(records, start_time, end_time):
                 model_prefix_cache[model_id] = strip_model_prefix(model_id)
             clean_model_id = model_prefix_cache[model_id]
 
-            # Get pricing (once per unique model)
-            pricing = get_model_pricing(model_id)
-
-            # Calculate cost (pricing is per million tokens)
-            input_cost = (total_input_tokens / 1_000_000) * pricing['input']
-            output_cost = (total_output_tokens / 1_000_000) * pricing['output']
-            total_cost = input_cost + output_cost
-
-            # Aggregate data (each record represents multiple invocations)
-            # Use cleaned model ID for aggregation to consolidate ARN-prefixed models
+            # Aggregate invocation data
             user_invocations[user] += invocations
             model_usage[clean_model_id] += invocations
-            daily_trend[date_day] += invocations  # Now with per-day breakdown
-
-            # Aggregate tokens and costs
-            user_tokens[user]['input'] += total_input_tokens
-            user_tokens[user]['output'] += total_output_tokens
-            user_costs[user] += total_cost
-
-            model_tokens[clean_model_id]['input'] += total_input_tokens
-            model_tokens[clean_model_id]['output'] += total_output_tokens
-            model_costs[clean_model_id] += total_cost
+            daily_trend[date_day] += invocations
             model_invocations[clean_model_id] += invocations
 
-            daily_costs[date_day] += total_cost
+            # Aggregate tokens
+            user_tokens[user]['input'] += total_input_tokens
+            user_tokens[user]['output'] += total_output_tokens
+            model_tokens[clean_model_id]['input'] += total_input_tokens
+            model_tokens[clean_model_id]['output'] += total_output_tokens
 
-            # Track per-user per-model costs (using clean model ID)
-            user_model_costs[user][clean_model_id] += total_cost
-
-            # Track per-user per-model per-day costs (for daily chart)
-            user_model_daily_costs[user][clean_model_id][date_day] += total_cost
-
-            # Track per-user daily costs (aggregate across all models)
-            user_daily_costs[user][date_day] += total_cost
+            # Track user's share of model invocations (for cost allocation)
+            user_model_invocations[user][clean_model_id] += invocations
+            user_daily_invocations[user][date_day] += invocations
+            user_model_daily_invocations[user][clean_model_id][date_day] += invocations
 
             total_events += invocations
 
@@ -1099,17 +1180,62 @@ def _process_logs_insights_results(records, start_time, end_time):
     user_invocations = {u: v for u, v in user_invocations.items() if u != 'Unknown'}
     model_usage = {m: v for m, v in model_usage.items() if m != 'Unknown'}
     user_tokens = {u: v for u, v in user_tokens.items() if u != 'Unknown'}
-    user_costs = {u: v for u, v in user_costs.items() if u != 'Unknown'}
     model_tokens = {m: v for m, v in model_tokens.items() if m != 'Unknown'}
-    model_costs = {m: v for m, v in model_costs.items() if m != 'Unknown'}
     model_invocations = {m: v for m, v in model_invocations.items() if m != 'Unknown'}
-    user_daily_costs = {u: costs for u, costs in user_daily_costs.items() if u != 'Unknown'}
-    user_model_costs = {u: {m: v for m, v in costs.items() if m != 'Unknown'} for u, costs in user_model_costs.items() if u != 'Unknown'}
+    user_model_invocations = {u: {m: v for m, v in mi.items() if m != 'Unknown'}
+                              for u, mi in user_model_invocations.items() if u != 'Unknown'}
 
-    # Calculate total tokens and costs (after filtering)
+    # Calculate total tokens
     total_input_tokens = sum(t['input'] for t in user_tokens.values())
     total_output_tokens = sum(t['output'] for t in user_tokens.values())
-    total_cost = sum(user_costs.values())
+
+    # Fetch actual costs from Cost Explorer
+    ce_costs = get_cost_explorer_costs(start_time, end_time)
+
+    # Allocate costs to users based on their share of model invocations
+    user_costs = defaultdict(float)
+    model_costs = ce_costs.get('model_costs', {})
+    daily_costs = ce_costs.get('daily_costs', {})
+    user_model_costs = defaultdict(lambda: defaultdict(float))
+    user_daily_costs = defaultdict(lambda: defaultdict(float))
+    user_model_daily_costs = defaultdict(lambda: defaultdict(lambda: defaultdict(float)))
+
+    # For each model, allocate cost to users based on their invocation share
+    for model_id, total_model_cost in model_costs.items():
+        # Get total invocations for this model
+        total_model_invocations = model_invocations.get(model_id, 0)
+
+        if total_model_invocations > 0:
+            # Allocate cost to each user based on their share of invocations
+            for user, user_models in user_model_invocations.items():
+                user_model_inv = user_models.get(model_id, 0)
+                if user_model_inv > 0:
+                    # User's share of this model's cost
+                    user_share = user_model_inv / total_model_invocations
+                    allocated_cost = total_model_cost * user_share
+                    user_costs[user] += allocated_cost
+                    user_model_costs[user][model_id] += allocated_cost
+
+    # Allocate daily costs to users based on their daily invocation share
+    model_daily_costs = ce_costs.get('model_daily_costs', {})
+    for model_id, daily_model_costs in model_daily_costs.items():
+        for date, day_cost in daily_model_costs.items():
+            # Get total invocations for this model on this day
+            total_day_inv = sum(
+                user_model_daily_invocations.get(u, {}).get(model_id, {}).get(date, 0)
+                for u in user_invocations.keys()
+            )
+
+            if total_day_inv > 0:
+                for user in user_invocations.keys():
+                    user_day_inv = user_model_daily_invocations.get(user, {}).get(model_id, {}).get(date, 0)
+                    if user_day_inv > 0:
+                        user_share = user_day_inv / total_day_inv
+                        allocated_cost = day_cost * user_share
+                        user_daily_costs[user][date] += allocated_cost
+                        user_model_daily_costs[user][model_id][date] += allocated_cost
+
+    total_cost = ce_costs.get('total_cost', 0.0)
 
     return {
         'user_invocations': dict(user_invocations),
@@ -1118,12 +1244,14 @@ def _process_logs_insights_results(records, start_time, end_time):
         'date_range': f'{start_time.strftime("%Y-%m-%d")} to {end_time.strftime("%Y-%m-%d")}',
         'total_events': total_events,
 
-        # Token and cost data
+        # Token data (from CloudWatch logs)
         'user_tokens': {user: dict(tokens) for user, tokens in user_tokens.items()},
-        'user_costs': dict(user_costs),
         'model_tokens': {model: dict(tokens) for model, tokens in model_tokens.items()},
-        'model_costs': dict(model_costs),
         'model_invocations': dict(model_invocations),
+
+        # Cost data (from Cost Explorer, allocated to users by invocation share)
+        'user_costs': dict(user_costs),
+        'model_costs': dict(model_costs),
         'daily_costs': dict(sorted(daily_costs.items())),
 
         # Per-user daily costs
@@ -1135,16 +1263,19 @@ def _process_logs_insights_results(records, start_time, end_time):
         # Per-user per-model per-day costs (for daily chart)
         'user_model_daily_costs': {
             user: {
-                model: dict(sorted(daily_costs.items()))
-                for model, daily_costs in model_costs.items()
+                model: dict(sorted(daily.items()))
+                for model, daily in models.items()
             }
-            for user, model_costs in user_model_daily_costs.items()
+            for user, models in user_model_daily_costs.items()
         },
 
         # Summary totals
         'total_input_tokens': total_input_tokens,
         'total_output_tokens': total_output_tokens,
-        'total_cost': total_cost
+        'total_cost': total_cost,
+
+        # Source indicator
+        'cost_source': 'AWS Cost Explorer'
     }
 
 @app.route('/')
