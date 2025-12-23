@@ -1160,10 +1160,14 @@ def _process_logs_insights_results(records, start_time, end_time):
                 model_prefix_cache[model_id] = strip_model_prefix(model_id)
             clean_model_id = model_prefix_cache[model_id]
 
+            # Normalize date format to YYYY-MM-DD (Cost Explorer format)
+            # CloudWatch returns dates like '2025-12-02 00:00:00.000'
+            normalized_date = date_day.split(' ')[0] if ' ' in date_day else date_day
+
             # Aggregate invocation data
             user_invocations[user] += invocations
             model_usage[clean_model_id] += invocations
-            daily_trend[date_day] += invocations
+            daily_trend[normalized_date] += invocations
             model_invocations[clean_model_id] += invocations
 
             # Aggregate tokens
@@ -1174,8 +1178,8 @@ def _process_logs_insights_results(records, start_time, end_time):
 
             # Track user's share of model invocations (for cost allocation)
             user_model_invocations[user][clean_model_id] += invocations
-            user_daily_invocations[user][date_day] += invocations
-            user_model_daily_invocations[user][clean_model_id][date_day] += invocations
+            user_daily_invocations[user][normalized_date] += invocations
+            user_model_daily_invocations[user][clean_model_id][normalized_date] += invocations
 
             total_events += invocations
 
