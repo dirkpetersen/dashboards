@@ -133,10 +133,10 @@ BEDROCK_PRICING = {
     'anthropic.claude-opus-4-20250514-v1:0': {'input': 15.0, 'output': 75.0},
     'anthropic.claude-opus-4-1-20250805-v1:0': {'input': 15.0, 'output': 75.0},
 
-    # Claude Opus 4.5 models - Cross-Region Inference ($15/$75 per million tokens)
-    'anthropic.claude-opus-4-5-20251101-v1:0': {'input': 15.0, 'output': 75.0},
-    'global.anthropic.claude-opus-4-5-20251101-v1:0': {'input': 15.0, 'output': 75.0},
-    'us.anthropic.claude-opus-4-5-20251101-v1:0': {'input': 15.0, 'output': 75.0},
+    # Claude Opus 4.5 models - $5/$25 per million tokens (Anthropic official pricing)
+    'anthropic.claude-opus-4-5-20251101-v1:0': {'input': 5.0, 'output': 25.0},
+    'global.anthropic.claude-opus-4-5-20251101-v1:0': {'input': 5.0, 'output': 25.0},
+    'us.anthropic.claude-opus-4-5-20251101-v1:0': {'input': 5.0, 'output': 25.0},
 
     # OpenAI models - Cross-Region Inference
     'openai.gpt-oss-20b-1:0': {'input': 0.07, 'output': 0.3},
