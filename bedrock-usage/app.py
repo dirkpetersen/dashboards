@@ -1159,7 +1159,7 @@ def usage_api():
     access_check = check_subnet_access()
     if access_check is not True:
         return access_check
-    days = int(request.args.get('days', 7))
+    days = request.args.get('days', '7')  # Keep as string, parse_days_parameter handles conversion
     data = get_bedrock_usage(days)
 
     # Add model display names for friendly UI display
@@ -1210,7 +1210,7 @@ def cost_matrix_api():
     if access_check is not True:
         return access_check
 
-    days = int(request.args.get('days', 7))
+    days = request.args.get('days', '7')  # Keep as string, parse_days_parameter handles conversion
     data = get_bedrock_usage(days)
 
     if 'error' in data:
