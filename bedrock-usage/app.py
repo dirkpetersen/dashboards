@@ -894,6 +894,23 @@ def get_cost_explorer_costs(start_time, end_time):
         end_date = (end_time + timedelta(days=1)).strftime('%Y-%m-%d')
 
         # Get daily costs by service for Bedrock-related services
+        # List all known Bedrock service names from AWS billing
+        bedrock_services = [
+            'Amazon Bedrock',
+            'Claude Opus 4.5 (Amazon Bedrock Edition)',
+            'Claude Sonnet 4.5 (Amazon Bedrock Edition)',
+            'Claude Haiku 4.5 (Amazon Bedrock Edition)',
+            'Claude Opus 4.1 (Amazon Bedrock Edition)',
+            'Claude Opus 4 (Amazon Bedrock Edition)',
+            'Claude Sonnet 4 (Amazon Bedrock Edition)',
+            'Claude 3.7 Sonnet (Amazon Bedrock Edition)',
+            'Claude 3.5 Sonnet (Amazon Bedrock Edition)',
+            'Claude 3.5 Haiku (Amazon Bedrock Edition)',
+            'Claude 3 Opus (Amazon Bedrock Edition)',
+            'Claude 3 Sonnet (Amazon Bedrock Edition)',
+            'Claude 3 Haiku (Amazon Bedrock Edition)',
+        ]
+
         response = ce_client.get_cost_and_usage(
             TimePeriod={
                 'Start': start_date,
@@ -905,10 +922,10 @@ def get_cost_explorer_costs(start_time, end_time):
                 {'Type': 'DIMENSION', 'Key': 'SERVICE'}
             ],
             Filter={
-                'Or': [
-                    {'Dimensions': {'Key': 'SERVICE', 'Values': ['Amazon Bedrock']}},
-                    {'Dimensions': {'Key': 'SERVICE', 'MatchOptions': ['CONTAINS'], 'Values': ['Bedrock Edition']}}
-                ]
+                'Dimensions': {
+                    'Key': 'SERVICE',
+                    'Values': bedrock_services
+                }
             }
         )
 
