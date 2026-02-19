@@ -14,8 +14,8 @@ from dotenv import load_dotenv
 # Load environment variables from .env file
 load_dotenv('.env')
 
-# Get the script name without extension for config lookups
-SCRIPT_NAME = os.path.splitext(os.path.basename(__file__))[0].upper().replace('-', '_')
+# Get the dashboard name from its directory for config lookups (e.g., bedrock-usage/ → BEDROCK_USAGE)
+SCRIPT_NAME = os.path.basename(os.path.dirname(os.path.abspath(__file__))).upper().replace('-', '_')
 
 def get_config(variable_name, default=None):
     """
@@ -23,7 +23,7 @@ def get_config(variable_name, default=None):
 
     Example:
         get_config('SUBNETS_ONLY') will look for:
-        1. SUBNETS_ONLY_BEDROCK_USAGE (if script is bedrock-usage.py)
+        1. SUBNETS_ONLY_BEDROCK_USAGE (if dashboard directory is bedrock-usage/)
         2. SUBNETS_ONLY (global fallback)
         3. default value
     """
@@ -108,7 +108,19 @@ def _cache_query_id(days, query_id, status):
 # NOTE: These are Cross-Region Inference (CRI) prices on AWS Bedrock
 # Format: 'model-id': {'input': price_per_million_input_tokens, 'output': price_per_million_output_tokens}
 BEDROCK_PRICING = {
-    # Claude 4.5 models (latest) - Cross-Region Inference
+    # Claude Sonnet 4.6 models
+    'anthropic.claude-sonnet-4-6': {'input': 3.0, 'output': 15.0},
+    'global.anthropic.claude-sonnet-4-6': {'input': 3.0, 'output': 15.0},
+    'us.anthropic.claude-sonnet-4-6': {'input': 3.0, 'output': 15.0},
+    'anthropic.claude-sonnet-4-6[1m]': {'input': 6.0, 'output': 22.5},  # Long context
+
+    # Claude Opus 4.6 models
+    'anthropic.claude-opus-4-6-v1': {'input': 5.0, 'output': 25.0},
+    'global.anthropic.claude-opus-4-6-v1': {'input': 5.0, 'output': 25.0},
+    'us.anthropic.claude-opus-4-6-v1': {'input': 5.0, 'output': 25.0},
+    'anthropic.claude-opus-4-6-v1[1m]': {'input': 10.0, 'output': 37.5},  # Long context
+
+    # Claude 4.5 models - Cross-Region Inference
     'anthropic.claude-sonnet-4-5-20250929-v1:0': {'input': 3.3, 'output': 16.5},  # Standard
     'anthropic.claude-sonnet-4-5-20250929-v1:0[1m]': {'input': 6.6, 'output': 24.75},  # Extended thinking
     'anthropic.claude-haiku-4-5-20251001-v1:0': {'input': 1.1, 'output': 5.5},

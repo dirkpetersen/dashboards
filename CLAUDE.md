@@ -204,7 +204,7 @@ To create a new dashboard (e.g., `bedrock-costs`):
    ./install-systemd.sh bedrock-costs 5001
    ```
 
-Configuration variables will automatically use `_BEDROCK_COSTS` suffix (derived from `bedrock-costs.py` filename).
+Configuration variables will automatically use `_BEDROCK_COSTS` suffix (derived from the `bedrock-costs/` directory name).
 
 ## Dashboard-Specific Documentation
 
@@ -236,10 +236,10 @@ Each dashboard's `app.py` documents specific API calls and required permissions.
 - `FQDN`: Domain name for Lambda deployments
 
 ### Dashboard-Specific Override Pattern
-Append `_{DASHBOARD_NAME}` (derived from filename without extension, uppercase, hyphens→underscores):
-- `bedrock-usage.py` → `AWS_PROFILE_BEDROCK_USAGE`
-- `bedrock-costs.py` → `AWS_PROFILE_BEDROCK_COSTS`
-- `s3-usage.py` → `AWS_PROFILE_S3_USAGE`
+Append `_{DASHBOARD_NAME}` (derived from the dashboard directory name, uppercase, hyphens→underscores):
+- `bedrock-usage/` → `AWS_PROFILE_BEDROCK_USAGE`
+- `bedrock-costs/` → `AWS_PROFILE_BEDROCK_COSTS`
+- `s3-usage/` → `AWS_PROFILE_S3_USAGE`
 
 See `.env.default` for examples.
 

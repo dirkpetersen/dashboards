@@ -116,7 +116,7 @@ The application follows a straightforward Flask architecture:
 - **HTML Templates**: Chart.js-based visualizations
   - `bedrock-usage-template.html`: Main dashboard with charts and tables
   - `bedrock-usage-template-pricing.html`: Model pricing reference table
-  - `bedrock-usage-matrix.html`: Cost matrix showing dollars per user/model (with region prefixes stripped)
+  - `bedrock-usage-more-stats.html`: Cost matrix and detailed stats showing dollars per user/model (with region prefixes stripped); also served at `/matrix` for backward compatibility
 
 ### Key Implementation Details
 
@@ -416,10 +416,10 @@ The priority is: Dashboard-specific > Global > Default
 
 ## Adding New Dashboards
 
-To add a new dashboard (e.g., bedrock-costs.py):
+To add a new dashboard (e.g., `bedrock-costs`):
 
 1. Create a new directory: `mkdir bedrock-costs`
-2. Create the Flask app: `bedrock-costs/bedrock-costs.py`
+2. Create the Flask app: `bedrock-costs/app.py` (copy from `bedrock-usage/app.py`)
 3. Create templates: `bedrock-costs/bedrock-costs-template.html`
 4. Install the service: `./install-systemd.sh bedrock-costs 5001`
 
