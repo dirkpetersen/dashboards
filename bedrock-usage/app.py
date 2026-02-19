@@ -110,14 +110,10 @@ def _cache_query_id(days, query_id, status):
 BEDROCK_PRICING = {
     # Claude Sonnet 4.6 models
     'anthropic.claude-sonnet-4-6': {'input': 3.0, 'output': 15.0},
-    'global.anthropic.claude-sonnet-4-6': {'input': 3.0, 'output': 15.0},
-    'us.anthropic.claude-sonnet-4-6': {'input': 3.0, 'output': 15.0},
     'anthropic.claude-sonnet-4-6[1m]': {'input': 6.0, 'output': 22.5},  # Long context
 
     # Claude Opus 4.6 models
     'anthropic.claude-opus-4-6-v1': {'input': 5.0, 'output': 25.0},
-    'global.anthropic.claude-opus-4-6-v1': {'input': 5.0, 'output': 25.0},
-    'us.anthropic.claude-opus-4-6-v1': {'input': 5.0, 'output': 25.0},
     'anthropic.claude-opus-4-6-v1[1m]': {'input': 10.0, 'output': 37.5},  # Long context
 
     # Claude 4.5 models - Cross-Region Inference
@@ -147,8 +143,6 @@ BEDROCK_PRICING = {
 
     # Claude Opus 4.5 models - $5/$25 per million tokens (Anthropic official pricing)
     'anthropic.claude-opus-4-5-20251101-v1:0': {'input': 5.0, 'output': 25.0},
-    'global.anthropic.claude-opus-4-5-20251101-v1:0': {'input': 5.0, 'output': 25.0},
-    'us.anthropic.claude-opus-4-5-20251101-v1:0': {'input': 5.0, 'output': 25.0},
 
     # OpenAI models - Cross-Region Inference
     'openai.gpt-oss-20b-1:0': {'input': 0.07, 'output': 0.3},
