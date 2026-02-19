@@ -900,6 +900,8 @@ def get_cost_explorer_costs(start_time, end_time):
         # List all known Bedrock service names from AWS billing
         bedrock_services = [
             'Amazon Bedrock',
+            'Claude Sonnet 4.6 (Amazon Bedrock Edition)',
+            'Claude Opus 4.6 (Amazon Bedrock Edition)',
             'Claude Opus 4.5 (Amazon Bedrock Edition)',
             'Claude Sonnet 4.5 (Amazon Bedrock Edition)',
             'Claude Haiku 4.5 (Amazon Bedrock Edition)',
@@ -941,6 +943,8 @@ def get_cost_explorer_costs(start_time, end_time):
         # Map AWS service names to cleaner model names
         service_to_model = {
             'Amazon Bedrock': 'Amazon Bedrock (Other)',
+            'Claude Sonnet 4.6 (Amazon Bedrock Edition)': 'anthropic.claude-sonnet-4-6',
+            'Claude Opus 4.6 (Amazon Bedrock Edition)': 'anthropic.claude-opus-4-6-v1',
             'Claude Opus 4.5 (Amazon Bedrock Edition)': 'anthropic.claude-opus-4-5-20251101-v1:0',
             'Claude Sonnet 4.5 (Amazon Bedrock Edition)': 'anthropic.claude-sonnet-4-5-20250929-v1:0',
             'Claude Haiku 4.5 (Amazon Bedrock Edition)': 'anthropic.claude-haiku-4-5-20251001-v1:0',
