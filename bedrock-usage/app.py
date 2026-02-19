@@ -108,41 +108,27 @@ def _cache_query_id(days, query_id, status):
 # NOTE: These are Cross-Region Inference (CRI) prices on AWS Bedrock
 # Format: 'model-id': {'input': price_per_million_input_tokens, 'output': price_per_million_output_tokens}
 BEDROCK_PRICING = {
-    # Claude Sonnet 4.6 models
+    # Claude Sonnet 4.6
     'anthropic.claude-sonnet-4-6': {'input': 3.0, 'output': 15.0},
     'anthropic.claude-sonnet-4-6[1m]': {'input': 6.0, 'output': 22.5},  # Long context
 
-    # Claude Opus 4.6 models
+    # Claude Opus 4.6
     'anthropic.claude-opus-4-6-v1': {'input': 5.0, 'output': 25.0},
     'anthropic.claude-opus-4-6-v1[1m]': {'input': 10.0, 'output': 37.5},  # Long context
 
-    # Claude 4.5 models - Cross-Region Inference
-    'anthropic.claude-sonnet-4-5-20250929-v1:0': {'input': 3.3, 'output': 16.5},  # Standard
-    'anthropic.claude-sonnet-4-5-20250929-v1:0[1m]': {'input': 6.6, 'output': 24.75},  # Extended thinking
-    'anthropic.claude-haiku-4-5-20251001-v1:0': {'input': 1.1, 'output': 5.5},
-
-    # Claude 3.7 models
-    'anthropic.claude-3-7-sonnet-20250219-v1:0': {'input': 3.0, 'output': 15.0},
-
-    # Claude 3.5 models
-    'anthropic.claude-sonnet-4-20250514-v1:0': {'input': 3.0, 'output': 15.0},
-    'anthropic.claude-3-5-sonnet-20240620-v1:0': {'input': 3.0, 'output': 15.0},
-    'anthropic.claude-3-5-sonnet-20241022-v2:0': {'input': 3.0, 'output': 15.0},
-
-    # Claude 3.5 Haiku
-    'anthropic.claude-3-5-haiku-20241022-v1:0': {'input': 1.0, 'output': 5.0},
-
-    # Claude 3 models - Cross-Region Inference
-    'anthropic.claude-3-haiku-20240307-v1:0': {'input': 0.25, 'output': 1.25},
-    'anthropic.claude-3-opus-20240229-v1:0': {'input': 15.0, 'output': 75.0},
-    'anthropic.claude-3-sonnet-20240229-v1:0': {'input': 3.0, 'output': 15.0},
-
-    # Claude 4.x models - Cross-Region Inference
-    'anthropic.claude-opus-4-20250514-v1:0': {'input': 15.0, 'output': 75.0},
-    'anthropic.claude-opus-4-1-20250805-v1:0': {'input': 15.0, 'output': 75.0},
-
-    # Claude Opus 4.5 models - $5/$25 per million tokens (Anthropic official pricing)
+    # Claude Opus 4.5
     'anthropic.claude-opus-4-5-20251101-v1:0': {'input': 5.0, 'output': 25.0},
+
+    # Claude Haiku 4.5
+    'anthropic.claude-haiku-4-5-20251001-v1:0': {'input': 1.0, 'output': 5.0},
+
+    # Claude Sonnet 4.5
+    'anthropic.claude-sonnet-4-5-20250929-v1:0': {'input': 3.0, 'output': 15.0},
+    'anthropic.claude-sonnet-4-5-20250929-v1:0[1m]': {'input': 6.0, 'output': 22.5},  # Long context
+
+    # Claude Sonnet 4
+    'anthropic.claude-sonnet-4-20250514-v1:0': {'input': 3.0, 'output': 15.0},
+    'anthropic.claude-sonnet-4-20250514-v1:0[1m]': {'input': 6.0, 'output': 22.5},  # Long context
 
     # OpenAI models - Cross-Region Inference
     'openai.gpt-oss-20b-1:0': {'input': 0.07, 'output': 0.3},
@@ -211,6 +197,17 @@ BEDROCK_PRICING = {
 }
 
 INACTIVE_BEDROCK_PRICING = {
+    # Anthropic models removed from Bedrock
+    'anthropic.claude-3-7-sonnet-20250219-v1:0': {'input': 3.0, 'output': 15.0},
+    'anthropic.claude-3-5-sonnet-20240620-v1:0': {'input': 3.0, 'output': 15.0},
+    'anthropic.claude-3-5-sonnet-20241022-v2:0': {'input': 3.0, 'output': 15.0},
+    'anthropic.claude-3-5-haiku-20241022-v1:0': {'input': 1.0, 'output': 5.0},
+    'anthropic.claude-3-haiku-20240307-v1:0': {'input': 0.25, 'output': 1.25},
+    'anthropic.claude-3-opus-20240229-v1:0': {'input': 15.0, 'output': 75.0},
+    'anthropic.claude-3-sonnet-20240229-v1:0': {'input': 3.0, 'output': 15.0},
+    'anthropic.claude-opus-4-20250514-v1:0': {'input': 15.0, 'output': 75.0},
+    'anthropic.claude-opus-4-1-20250805-v1:0': {'input': 15.0, 'output': 75.0},
+
     # Claude 2 models (deprecated)
     'anthropic.claude-v2:1': {'input': 8.0, 'output': 24.0},
     'anthropic.claude-v2': {'input': 8.0, 'output': 24.0},
