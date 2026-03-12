@@ -538,6 +538,7 @@ VPN_ERROR_TEMPLATE = """
 # Get configuration from environment (with dashboard-specific overrides)
 SUBNETS_ONLY = get_config('SUBNETS_ONLY')
 AWS_PROFILE = get_config('AWS_PROFILE')
+AWS_ADMIN_PROFILE = get_config('AWS_ADMIN_PROFILE', AWS_PROFILE)
 FQDN = get_config('FQDN')
 
 def check_subnet_access():
@@ -889,7 +890,8 @@ def get_cost_explorer_costs(start_time, end_time):
         dict with 'model_costs', 'daily_costs', 'model_daily_costs', 'total_cost'
     """
     try:
-        ce_client = boto3.client('ce')
+        session = boto3.Session(profile_name=AWS_ADMIN_PROFILE) if AWS_ADMIN_PROFILE else boto3.Session()
+        ce_client = session.client('ce')
 
         # Format dates for Cost Explorer API (YYYY-MM-DD)
         start_date = start_time.strftime('%Y-%m-%d')
@@ -1010,7 +1012,8 @@ def get_bedrock_usage(days=7):
         days: Can be a number (e.g., 7, 30, 90), 'mtd' for month-to-date, or 'last-month'
     """
     try:
-        logs_client = boto3.client('logs')
+        session = boto3.Session(profile_name=AWS_PROFILE) if AWS_PROFILE else boto3.Session()
+        logs_client = session.client('logs')
 
         # Parse days parameter to get start and end times
         start_time, end_time = parse_days_parameter(days)
