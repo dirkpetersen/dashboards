@@ -201,7 +201,7 @@ INACTIVE_BEDROCK_PRICING = {
     'anthropic.claude-3-7-sonnet-20250219-v1:0': {'input': 3.0, 'output': 15.0},
     'anthropic.claude-3-5-sonnet-20240620-v1:0': {'input': 3.0, 'output': 15.0},
     'anthropic.claude-3-5-sonnet-20241022-v2:0': {'input': 3.0, 'output': 15.0},
-    'anthropic.claude-3-5-haiku-20241022-v1:0': {'input': 1.0, 'output': 5.0},
+    'anthropic.claude-3-5-haiku-20241022-v1:0': {'input': 0.8, 'output': 4.0},
     'anthropic.claude-3-haiku-20240307-v1:0': {'input': 0.25, 'output': 1.25},
     'anthropic.claude-3-opus-20240229-v1:0': {'input': 15.0, 'output': 75.0},
     'anthropic.claude-3-sonnet-20240229-v1:0': {'input': 3.0, 'output': 15.0},

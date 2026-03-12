@@ -539,6 +539,13 @@ else
                 "bedrock:GetModelInvocationLoggingConfiguration"
               ],
               "Resource": "*"
+            },
+            {
+              "Effect": "Allow",
+              "Action": [
+                "ce:GetCostAndUsage"
+              ],
+              "Resource": "*"
             }
           ]
         }'
