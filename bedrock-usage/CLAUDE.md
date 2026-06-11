@@ -92,18 +92,18 @@ time curl -s http://localhost:5001/api/usage?days=7 > /dev/null
 
 **Scenario 3: Testing different date ranges**
 ```bash
-# Test 1 day
+# Test 1 day, 30 days, month-to-date, and last month
 curl -s "http://localhost:5001/api/usage?days=1" | python3 -m json.tool | head -20
-
-# Test 30 days
 curl -s "http://localhost:5001/api/usage?days=30" | python3 -m json.tool | head -20
+curl -s "http://localhost:5001/api/usage?days=mtd" | python3 -m json.tool | head -20
+curl -s "http://localhost:5001/api/usage?days=last-month" | python3 -m json.tool | head -20
 ```
 
 ### Code Structure Overview
 
 The application follows a straightforward Flask architecture:
 
-- **app.py**: Main Flask application (~820 lines)
+- **app.py**: Main Flask application (~1500 lines)
   - `get_config()`: Loads environment variables with dashboard-specific override support
   - `check_subnet_access()`: Middleware for VPN/subnet access control
   - `normalize_username()`: User aggregation logic (removes `bedrock-` prefix, applies `USER_MAP`)
@@ -131,7 +131,7 @@ The application follows a straightforward Flask architecture:
 - Uses CloudWatch Logs Insights for server-side aggregation (10-100x faster)
 - Old approach: Fetch all events → aggregate in Python (slow for large datasets)
 - New approach: CloudWatch aggregates → return only summary data (fast)
-- Query caching infrastructure ready for future use (10-minute TTL)
+- Query caching with 10-minute TTL; `mtd` and `last-month` use special cache keys so they don't collide across day boundaries
 - Optimized parsing with model prefix caching to avoid redundant operations
 
 **User Aggregation**:
@@ -188,8 +188,8 @@ Flask application with enhanced analytics that:
   - Log group: `/aws/bedrock/modelinvocations`
   - Contains per-invocation details including IAM user identity, model ID, and token counts
   - Uses Insights queries for 10-100x faster performance than filtering
-- **Cost Explorer**: `ce:GetCostAndUsage` for cost data by user (optional, not currently used)
-- **CloudWatch Metrics**: `cloudwatch:GetMetricStatistics` for invocation counts (optional, not currently used)
+- **Cost Explorer**: `ce:GetCostAndUsage` fetches actual AWS billing costs by service; costs are then allocated to users proportionally by invocation share per model
+- **CloudWatch Metrics**: `cloudwatch:GetMetricStatistics` (optional, not currently used)
 
 ## AWS Permissions Required
 
@@ -197,9 +197,8 @@ The IAM user/role running this needs:
 - `logs:StartQuery` (required for CloudWatch Logs Insights)
 - `logs:GetQueryResults` (required for CloudWatch Logs Insights)
 - `logs:DescribeLogStreams` (optional, for troubleshooting)
-- `cloudwatch:GetMetricStatistics` (optional, for future enhancements)
-- `cloudwatch:ListMetrics` (optional, for future enhancements)
-- `ce:GetCostAndUsage` (optional, for future enhancements)
+- `cloudwatch:GetMetricStatistics` (optional, unused)
+- `ce:GetCostAndUsage` (required for cost data)
 - `bedrock:ListFoundationModels` (optional, for model names)
 
 ## Project Structure

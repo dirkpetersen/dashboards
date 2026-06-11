@@ -24,6 +24,8 @@ python3 -m py_compile bedrock-usage/app.py
 # Test API
 curl -s http://localhost:5000/api/usage | python3 -m json.tool | head -20
 curl -s "http://localhost:5000/api/usage?days=7" | python3 -m json.tool
+curl -s "http://localhost:5000/api/usage?days=mtd" | python3 -m json.tool
+curl -s "http://localhost:5000/api/cost-matrix?days=30" | python3 -m json.tool | head -20
 time curl -s http://localhost:5000/api/usage > /dev/null
 
 # Deploy as systemd service
@@ -44,7 +46,7 @@ Environment variables with a hierarchy (checked in order):
 
 `DASHBOARD_NAME` is derived from the script filename: `bedrock-usage.py` → `BEDROCK_USAGE`.
 
-Variables: `AWS_PROFILE`, `SUBNETS_ONLY` (comma-separated CIDRs; localhost always allowed), `FQDN` (Lambda deployments).
+Variables: `AWS_PROFILE`, `AWS_ADMIN_PROFILE` (separate profile for Cost Explorer if different permissions), `SUBNETS_ONLY` (comma-separated CIDRs; localhost always allowed), `FQDN` (Lambda deployments).
 
 Copy `.env.default` to `.env` to configure.
 
@@ -54,9 +56,10 @@ Each dashboard is a Flask app (`{name}/app.py`) with these standard components:
 
 - **`get_config(var, default=None)`** — config lookup with the hierarchy above
 - **`check_subnet_access()`** — `@app.before_request` middleware enforcing `SUBNETS_ONLY`; returns 403 JSON if denied
-- **`_query_cache` / `_cache_ttl`** — in-memory dict caching CloudWatch query IDs for 10 min to avoid redundant API calls
-- **Routes**: `/` renders the HTML template; `/api/usage` returns JSON; additional routes for features (pricing, matrix, etc.)
+- **`_query_cache` / `_cache_ttl`** — in-memory dict caching CloudWatch query IDs (10-min TTL); special cache key logic for `mtd` and `last-month` ranges
+- **Routes**: `/` renders the HTML template; `/api/usage` returns JSON; `/api/cost-matrix` returns user×model cost breakdown; `/pricing` and `/matrix` for additional views
 - **Templates**: `{name}-template.html` (main), `{name}-template-*.html` (additional views) using Chart.js + moment.js
+- **Cost allocation**: actual AWS costs fetched from Cost Explorer, then allocated to users proportionally by invocation share per model
 
 App entry point: `app.run(debug=True, host='0.0.0.0', port=args.port)` with `--port` arg and `PORT` env var.
 

@@ -108,27 +108,10 @@ def _cache_query_id(days, query_id, status):
 # NOTE: These are Cross-Region Inference (CRI) prices on AWS Bedrock
 # Format: 'model-id': {'input': price_per_million_input_tokens, 'output': price_per_million_output_tokens}
 BEDROCK_PRICING = {
-    # Claude Sonnet 4.6
-    'anthropic.claude-sonnet-4-6': {'input': 3.0, 'output': 15.0},
-    'anthropic.claude-sonnet-4-6[1m]': {'input': 6.0, 'output': 22.5},  # Long context
-
-    # Claude Opus 4.6
-    'anthropic.claude-opus-4-6-v1': {'input': 5.0, 'output': 25.0},
-    'anthropic.claude-opus-4-6-v1[1m]': {'input': 10.0, 'output': 37.5},  # Long context
-
-    # Claude Opus 4.5
-    'anthropic.claude-opus-4-5-20251101-v1:0': {'input': 5.0, 'output': 25.0},
-
-    # Claude Haiku 4.5
-    'anthropic.claude-haiku-4-5-20251001-v1:0': {'input': 1.0, 'output': 5.0},
-
-    # Claude Sonnet 4.5
-    'anthropic.claude-sonnet-4-5-20250929-v1:0': {'input': 3.0, 'output': 15.0},
-    'anthropic.claude-sonnet-4-5-20250929-v1:0[1m]': {'input': 6.0, 'output': 22.5},  # Long context
-
-    # Claude Sonnet 4
-    'anthropic.claude-sonnet-4-20250514-v1:0': {'input': 3.0, 'output': 15.0},
-    'anthropic.claude-sonnet-4-20250514-v1:0[1m]': {'input': 6.0, 'output': 22.5},  # Long context
+    # NOTE: Anthropic Claude models are NOT listed individually here.
+    # All Claude pricing is family-based (see CLAUDE_FAMILY_PRICING below) so that
+    # newly released versions (Opus 4.7, 4.8, 5.x, ...) are priced automatically
+    # with no per-model maintenance. Only non-Claude models need explicit entries.
 
     # OpenAI models - Cross-Region Inference
     'openai.gpt-oss-20b-1:0': {'input': 0.07, 'output': 0.3},
@@ -195,6 +178,99 @@ BEDROCK_PRICING = {
     # Default pricing for unknown models
     'default': {'input': 0.0, 'output': 0.0}
 }
+
+# Family-based pricing for Anthropic Claude models.
+#
+# Claude prices barely change between versions within a family, so we price by
+# FAMILY rather than by individual model. Any new release (Opus 4.7, 4.8, 5.x,
+# Sonnet 5, ...) is priced automatically with zero code changes — only update
+# these numbers if AWS changes a family's per-token price.
+#
+# Keyed by (family, is_1m_context). On current AWS Bedrock the 1M / >200K context
+# window is billed at the SAME rate as the standard window (no premium tier), so
+# the 1M entries equal the standard ones. They are kept as separate rows so the
+# price list still shows the five families you expect, and so a future premium is
+# a one-line change.
+#
+# These five entries ARE the five families shown on the /pricing page:
+#   Haiku, Sonnet, Sonnet (1M), Opus, Opus (1M)
+CLAUDE_FAMILY_PRICING = {
+    ('haiku',  False): {'input': 1.0,  'output': 5.0},
+    ('sonnet', False): {'input': 3.0,  'output': 15.0},
+    ('sonnet', True):  {'input': 3.0,  'output': 15.0},   # 1M context, no premium
+    ('opus',   False): {'input': 5.0,  'output': 25.0},
+    ('opus',   True):  {'input': 5.0,  'output': 25.0},   # 1M context, no premium
+    ('fable',  False): {'input': 10.0, 'output': 50.0},
+    ('fable',  True):  {'input': 10.0, 'output': 50.0},   # 1M context, no premium assumed
+}
+
+# Display labels for each (family, is_1m) key, used by the /pricing page.
+CLAUDE_FAMILY_LABELS = {
+    ('haiku',  False): 'Claude Haiku',
+    ('sonnet', False): 'Claude Sonnet',
+    ('sonnet', True):  'Claude Sonnet (1M context)',
+    ('opus',   False): 'Claude Opus',
+    ('opus',   True):  'Claude Opus (1M context)',
+    ('fable',  False): 'Claude Fable',
+    ('fable',  True):  'Claude Fable (1M context)',
+}
+
+
+def classify_claude_model(model_id):
+    """
+    Detect the Claude family and 1M-context flag for any model id.
+
+    Works on raw or region/ARN-prefixed ids, with or without a date/version
+    suffix, e.g.:
+        'global.anthropic.claude-opus-4-7'                  -> ('opus', False)
+        'anthropic.claude-sonnet-4-6[1m]'                   -> ('sonnet', True)
+        'us.anthropic.claude-haiku-4-5-20251001-v1:0'       -> ('haiku', False)
+
+    Returns (family, is_1m) where family is one of 'haiku'/'sonnet'/'opus',
+    or None if the id is not a Claude model.
+    """
+    lowered = model_id.lower()
+    if 'claude' not in lowered:
+        return None
+    is_1m = '[1m]' in lowered
+    for family in ('haiku', 'sonnet', 'opus', 'fable'):
+        if family in lowered:
+            return (family, is_1m)
+    return None
+
+
+def canonical_model_id(name):
+    """
+    Normalize a CloudWatch modelId OR a Cost Explorer service name to a single
+    canonical id, so that usage (from CloudWatch) and cost (from Cost Explorer)
+    join on the same key regardless of how each source spells the model.
+
+    Claude examples (all collapse to family + major-minor version):
+        'global.anthropic.claude-opus-4-7'                 -> 'anthropic.claude-opus-4-7'
+        'anthropic.claude-opus-4-6-v1'                     -> 'anthropic.claude-opus-4-6'
+        'us.anthropic.claude-opus-4-5-20251101-v1:0'       -> 'anthropic.claude-opus-4-5'
+        'Claude Opus 4.7 (Amazon Bedrock Edition)'         -> 'anthropic.claude-opus-4-7'
+        'Claude 3.5 Sonnet (Amazon Bedrock Edition)'       -> 'anthropic.claude-sonnet-3-5'
+
+    This is what makes the dashboard migratable: a newly released Claude version
+    shows up in both usage and cost automatically, with no allowlist to update.
+
+    Non-Claude names fall back to region/ARN prefix stripping (unchanged behavior).
+    """
+    lowered = name.lower()
+    if 'claude' in lowered:
+        family = next((f for f in ('haiku', 'sonnet', 'opus', 'fable') if f in lowered), None)
+        if family:
+            # Match major.minor (4-7, 4.7) or bare major (5) — first occurrence
+            m = re.search(r'(\d+)[._-](\d+)', lowered)
+            if m:
+                return f'anthropic.claude-{family}-{m.group(1)}-{m.group(2)}'
+            m = re.search(r'(\d+)', lowered.split('claude')[1])
+            if m:
+                return f'anthropic.claude-{family}-{m.group(1)}'
+            return f'anthropic.claude-{family}'
+
+    return strip_model_prefix(name)
 
 INACTIVE_BEDROCK_PRICING = {
     # Anthropic models removed from Bedrock
@@ -272,6 +348,22 @@ def get_model_display_name(model_id):
     6. Capitalize each word
     7. Add context window label if present
     """
+    # Fast path for canonical Claude ids ('anthropic.claude-<family>-<maj>-<min>'),
+    # which is what usage/cost data uses. Render the version with a dot, e.g.
+    # 'anthropic.claude-opus-4-7' -> 'Claude Opus 4.7', and keep the [1m] tag.
+    claude_match = re.match(
+        r'^anthropic\.claude-(haiku|sonnet|opus|fable)(?:-(\d+)(?:-(\d+))?)?(\[1m\])?$', model_id)
+    if claude_match:
+        family, maj, minor, onem = claude_match.groups()
+        name = f'Claude {family.capitalize()}'
+        if maj and minor:
+            name += f' {maj}.{minor}'
+        elif maj:
+            name += f' {maj}'
+        if onem:
+            name += ' (1m)'
+        return name
+
     # Strip already-cleaned model_id (no region prefix)
     clean_id = model_id
 
@@ -307,6 +399,11 @@ def get_model_display_name(model_id):
 
 def get_model_pricing(model_id):
     """Get pricing for a specific model"""
+    # Claude models are priced by family (handles all current/future versions)
+    claude_key = classify_claude_model(model_id)
+    if claude_key is not None:
+        return CLAUDE_FAMILY_PRICING[claude_key]
+
     # Strip region prefix if present (e.g., 'us.', 'global.', 'eu.')
     clean_model_id = strip_model_prefix(model_id)
 
@@ -898,26 +995,11 @@ def get_cost_explorer_costs(start_time, end_time):
         # Cost Explorer end date is exclusive, so add 1 day
         end_date = (end_time + timedelta(days=1)).strftime('%Y-%m-%d')
 
-        # Get daily costs by service for Bedrock-related services
-        # List all known Bedrock service names from AWS billing
-        bedrock_services = [
-            'Amazon Bedrock',
-            'Claude Sonnet 4.6 (Amazon Bedrock Edition)',
-            'Claude Opus 4.6 (Amazon Bedrock Edition)',
-            'Claude Opus 4.5 (Amazon Bedrock Edition)',
-            'Claude Sonnet 4.5 (Amazon Bedrock Edition)',
-            'Claude Haiku 4.5 (Amazon Bedrock Edition)',
-            'Claude Opus 4.1 (Amazon Bedrock Edition)',
-            'Claude Opus 4 (Amazon Bedrock Edition)',
-            'Claude Sonnet 4 (Amazon Bedrock Edition)',
-            'Claude 3.7 Sonnet (Amazon Bedrock Edition)',
-            'Claude 3.5 Sonnet (Amazon Bedrock Edition)',
-            'Claude 3.5 Haiku (Amazon Bedrock Edition)',
-            'Claude 3 Opus (Amazon Bedrock Edition)',
-            'Claude 3 Sonnet (Amazon Bedrock Edition)',
-            'Claude 3 Haiku (Amazon Bedrock Edition)',
-        ]
-
+        # Group all costs by SERVICE. We do NOT use a hardcoded service allowlist:
+        # AWS bills each Claude model as its own service ("Claude Opus 4.7 (Amazon
+        # Bedrock Edition)", etc.) and invents new service names with every model
+        # release. Instead we fetch everything and keep Bedrock-related services
+        # by pattern, so newly released models are picked up automatically.
         response = ce_client.get_cost_and_usage(
             TimePeriod={
                 'Start': start_date,
@@ -927,13 +1009,7 @@ def get_cost_explorer_costs(start_time, end_time):
             Metrics=['UnblendedCost'],
             GroupBy=[
                 {'Type': 'DIMENSION', 'Key': 'SERVICE'}
-            ],
-            Filter={
-                'Dimensions': {
-                    'Key': 'SERVICE',
-                    'Values': bedrock_services
-                }
-            }
+            ]
         )
 
         # Process results
@@ -942,24 +1018,9 @@ def get_cost_explorer_costs(start_time, end_time):
         model_daily_costs = defaultdict(lambda: defaultdict(float))
         total_cost = 0.0
 
-        # Map AWS service names to cleaner model names
-        service_to_model = {
-            'Amazon Bedrock': 'Amazon Bedrock (Other)',
-            'Claude Sonnet 4.6 (Amazon Bedrock Edition)': 'anthropic.claude-sonnet-4-6',
-            'Claude Opus 4.6 (Amazon Bedrock Edition)': 'anthropic.claude-opus-4-6-v1',
-            'Claude Opus 4.5 (Amazon Bedrock Edition)': 'anthropic.claude-opus-4-5-20251101-v1:0',
-            'Claude Sonnet 4.5 (Amazon Bedrock Edition)': 'anthropic.claude-sonnet-4-5-20250929-v1:0',
-            'Claude Haiku 4.5 (Amazon Bedrock Edition)': 'anthropic.claude-haiku-4-5-20251001-v1:0',
-            'Claude Opus 4.1 (Amazon Bedrock Edition)': 'anthropic.claude-opus-4-1-20250805-v1:0',
-            'Claude Opus 4 (Amazon Bedrock Edition)': 'anthropic.claude-opus-4-20250514-v1:0',
-            'Claude Sonnet 4 (Amazon Bedrock Edition)': 'anthropic.claude-sonnet-4-20250514-v1:0',
-            'Claude 3.7 Sonnet (Amazon Bedrock Edition)': 'anthropic.claude-3-7-sonnet-20250219-v1:0',
-            'Claude 3.5 Sonnet (Amazon Bedrock Edition)': 'anthropic.claude-3-5-sonnet-20241022-v2:0',
-            'Claude 3.5 Haiku (Amazon Bedrock Edition)': 'anthropic.claude-3-5-haiku-20241022-v1:0',
-            'Claude 3 Opus (Amazon Bedrock Edition)': 'anthropic.claude-3-opus-20240229-v1:0',
-            'Claude 3 Sonnet (Amazon Bedrock Edition)': 'anthropic.claude-3-sonnet-20240229-v1:0',
-            'Claude 3 Haiku (Amazon Bedrock Edition)': 'anthropic.claude-3-haiku-20240307-v1:0',
-        }
+        def is_bedrock_service(name):
+            """True for the Bedrock parent service or any '... (Amazon Bedrock Edition)' model."""
+            return name == 'Amazon Bedrock' or 'Amazon Bedrock Edition' in name
 
         for day_result in response.get('ResultsByTime', []):
             date = day_result['TimePeriod']['Start']
@@ -968,9 +1029,18 @@ def get_cost_explorer_costs(start_time, end_time):
                 service_name = group['Keys'][0]
                 cost = float(group['Metrics']['UnblendedCost']['Amount'])
 
+                if not is_bedrock_service(service_name):
+                    continue
+
                 if cost > 0:
-                    # Map service name to model ID (or use service name if not in map)
-                    model_id = service_to_model.get(service_name, service_name)
+                    # Canonicalize service name to the same key usage data uses
+                    # (e.g. 'Claude Opus 4.7 (Amazon Bedrock Edition)' ->
+                    # 'anthropic.claude-opus-4-7'). The bare 'Amazon Bedrock'
+                    # parent service (embeddings, etc.) becomes 'Amazon Bedrock (Other)'.
+                    if service_name == 'Amazon Bedrock':
+                        model_id = 'Amazon Bedrock (Other)'
+                    else:
+                        model_id = canonical_model_id(service_name)
 
                     model_costs[model_id] += cost
                     daily_costs[date] += cost
@@ -1165,9 +1235,10 @@ def _process_logs_insights_results(records, start_time, end_time):
             # Normalize username (remove bedrock- prefix and apply alias mapping)
             user = normalize_username(raw_user)
 
-            # Strip region prefix for cleaner display (with caching)
+            # Canonicalize model id (with caching) so usage joins with Cost
+            # Explorer costs on the same key, regardless of region/version suffix.
             if model_id not in model_prefix_cache:
-                model_prefix_cache[model_id] = strip_model_prefix(model_id)
+                model_prefix_cache[model_id] = canonical_model_id(model_id)
             clean_model_id = model_prefix_cache[model_id]
 
             # Normalize date format to YYYY-MM-DD (Cost Explorer format)
@@ -1468,6 +1539,26 @@ def pricing_page():
 
     # Extract vendor and model info from pricing dictionary
     pricing_data = []
+
+    # Anthropic Claude is priced by family (one row per family, not per version),
+    # so all current and future Claude models are represented by these five rows.
+    for key, label in CLAUDE_FAMILY_LABELS.items():
+        prices = CLAUDE_FAMILY_PRICING[key]
+        input_price = prices['input']
+        output_price = prices['output']
+        total_price = input_price + output_price
+        pricing_data.append({
+            'vendor': 'Anthropic',
+            'vendor_icon': vendor_icons['anthropic'],
+            'model_id': label,
+            'input_price': format_price(input_price),
+            'output_price': format_price(output_price),
+            'total_price': format_price(total_price),
+            'input_price_raw': input_price,
+            'output_price_raw': output_price,
+            'total_price_raw': total_price
+        })
+
     for model_id, prices in BEDROCK_PRICING.items():
         if model_id == 'default':
             continue
