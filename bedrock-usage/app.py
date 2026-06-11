@@ -428,6 +428,25 @@ def get_model_pricing(model_id):
 # Load HTML templates from files
 template_dir = os.path.dirname(os.path.abspath(__file__))
 
+# Derive the date this code was last updated from git, falling back to file mtime.
+def _get_code_updated_date():
+    try:
+        import subprocess
+        result = subprocess.run(
+            ['git', 'log', '-1', '--format=%as', '--', os.path.abspath(__file__)],
+            capture_output=True, text=True, cwd=template_dir
+        )
+        date_str = result.stdout.strip()
+        if date_str:
+            return date_str
+    except Exception:
+        pass
+    import datetime
+    ts = os.path.getmtime(os.path.abspath(__file__))
+    return datetime.date.fromtimestamp(ts).isoformat()
+
+CODE_UPDATED_DATE = _get_code_updated_date()
+
 with open(os.path.join(template_dir, 'bedrock-usage-template.html'), 'r') as f:
     HTML_TEMPLATE = f.read()
 
@@ -1386,7 +1405,7 @@ def index():
     access_check = check_subnet_access()
     if access_check is not True:
         return access_check
-    return render_template_string(HTML_TEMPLATE)
+    return render_template_string(HTML_TEMPLATE, code_updated_date=CODE_UPDATED_DATE)
 
 @app.route('/api/usage')
 def usage_api():
